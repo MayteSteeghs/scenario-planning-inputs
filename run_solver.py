@@ -8,10 +8,11 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from docker_utils import ensure_docker_running
+from docker_utils import ensure_docker_running, run_with_timeout
 
 ROOT = Path(__file__).parent
 DOCKER_IMAGE_VERSIONS = {
@@ -157,7 +158,8 @@ def _run_scenario(docker_image: str, location_dir: Path, scenario: Path, dry_run
 
 
 def _run_scenario_single(docker_image: str, location_dir: Path, scenario: Path,
-                          output_dir: Path, version: str, dry_run: bool) -> dict:
+                          output_dir: Path, version: str, dry_run: bool,
+                          max_duration=None) -> dict:
     """Run one scenario, writing plan.json/solver.out/solver.err/result.json into
     output_dir instead of location_dir/plans/ — for experiment runs that need each
     (instance, tool) attempt kept in its own directory rather than the shared,
@@ -170,9 +172,10 @@ def _run_scenario_single(docker_image: str, location_dir: Path, scenario: Path,
     # parallel, so TEMP_CONFIG's fixed name was never a problem for it.
     config_path = location_dir / f"config_solver_run.{os.getpid()}.yaml"
     params = _parse_config(location_dir / "config_solver.yaml")
+    container_name = f"solver-{uuid.uuid4().hex[:12]}"
 
     cmd = [
-        "docker", "run", "--rm",
+        "docker", "run", "--rm", "--name", container_name,
         *(["--user", f"{os.getuid()}:{os.getgid()}"] if sys.platform != "win32" else []),
         "--mount", f"type=bind,source={location_dir.resolve()},target={CONTAINER_DB}",
         "--mount", f"type=bind,source={output_dir},target=/app/output",
@@ -192,13 +195,9 @@ def _run_scenario_single(docker_image: str, location_dir: Path, scenario: Path,
     err_file = output_dir / "solver.err"
     start = time.monotonic()
     start_iso = datetime.now(timezone.utc).isoformat()
-    returncode = None
     try:
-        with open(out_file, "w") as fout, open(err_file, "w") as ferr:
-            result = subprocess.run(cmd, stdout=fout, stderr=ferr)
-        returncode = result.returncode
-    except Exception as exc:
-        print(f"    ERROR: {exc}", file=sys.stderr)
+        returncode, timed_out = run_with_timeout(cmd, out_file, err_file, container_name,
+                                                  max_duration)
     finally:
         config_path.unlink(missing_ok=True)
 
@@ -211,17 +210,21 @@ def _run_scenario_single(docker_image: str, location_dir: Path, scenario: Path,
         "version": version,
         "image": docker_image,
         "command": cmd,
+        "max_duration": max_duration,
         "start_time": start_iso,
         "end_time": datetime.now(timezone.utc).isoformat(),
         "wall_seconds": round(time.monotonic() - start, 3),
         "exit_code": returncode,
+        "timed_out": timed_out,
         "plan_produced": plan_produced,
     }
     (output_dir / "result.json").write_text(json.dumps(record, indent=2) + "\n")
 
-    print(f"    exit {returncode}  plan_produced={plan_produced}  "
+    print(f"    exit {returncode}  timed_out={timed_out}  plan_produced={plan_produced}  "
           f"wall={record['wall_seconds']:.1f}s")
-    if returncode != 0:
+    if timed_out:
+        print(f"    TIMEOUT (exceeded --max-duration {max_duration}s)", file=sys.stderr)
+    elif returncode != 0:
         print(f"    FAILED (exit {returncode})", file=sys.stderr)
     return record
 
@@ -245,12 +248,20 @@ def main() -> None:
                         help="Write this single scenario's plan.json, solver.out/.err and "
                              "result.json here instead of <location>/plans/ (requires "
                              "--scenario).")
+    parser.add_argument("--max-duration", type=int, metavar="SECONDS",
+                        help="Wall-clock budget for this single scenario (requires "
+                             "--scenario). Kills the container directly if exceeded, rather "
+                             "than relying on the SimulatedAnnealing.MaxDuration config knob, "
+                             "so a stuck run cannot outlive the budget regardless of what the "
+                             "location's config_solver.yaml says.")
     args = parser.parse_args()
 
     if bool(args.scenario) != bool(args.output_dir):
         parser.error("--scenario and --output-dir must be given together.")
     if args.scenario and not args.location:
         parser.error("--scenario requires --location.")
+    if args.max_duration and not args.scenario:
+        parser.error("--max-duration requires --scenario.")
 
     if not args.dry_run:
         ensure_docker_running()
@@ -263,7 +274,8 @@ def main() -> None:
         if not scenario.exists():
             sys.exit(f"No such scenario: {scenario}")
         record = _run_scenario_single(DOCKER_IMAGE_VERSIONS[args.version], loc, scenario,
-                                       args.output_dir, args.version, args.dry_run)
+                                       args.output_dir, args.version, args.dry_run,
+                                       args.max_duration)
         if not args.dry_run and record.get("exit_code") != 0:
             sys.exit(1)
         return
