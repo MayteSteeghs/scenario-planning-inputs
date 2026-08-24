@@ -16,8 +16,11 @@ tool produced a plan; eval_result.json (written by run_evaluator.py, only
 when a plan was produced) carries the "solved" verdict — solved is decided
 by the evaluator alone, never by the solver/planner's own exit code.
 
-Instance/config generation is out of scope here — this consumes whatever is
-already in <location>/scenarios/scenario_*.json.
+Runs run_generator.py over the location first (cheap relative to solving/
+planning) so every configurations/scenario_config_*.json has a matching
+scenarios/scenario_*.json before instances are resolved. --config-dir
+restricts both generation and the instances that follow it to one external
+directory of configs, instead of the location's own configurations/.
 """
 
 import argparse
@@ -34,8 +37,37 @@ ROOT = Path(__file__).resolve().parent
 FOLDER_NAMES = {"solver": "local_search", "planner": "planning"}
 
 
+def _run_generator(location: str, version: str, dry_run: bool, config_dir: Path = None) -> None:
+    cmd = [
+        sys.executable, str(ROOT / "run_generator.py"),
+        "--location", location, "--version", version,
+        *(["--dry-run"] if dry_run else []),
+        *(["--config-dir", str(config_dir)] if config_dir else []),
+    ]
+    subprocess.run(cmd, cwd=ROOT)
+
+
 def _scenario_files(location_dir: Path) -> list:
     return sorted(location_dir.glob("scenarios/scenario_*.json"))
+
+
+def _run_generator_scoped(location: str, loc: Path, version: str, dry_run: bool,
+                           config_dir: Path) -> list:
+    """Run the generator against config_dir and return just the scenario files it
+    wrote or rewrote. The generator names output scenarios from a config's
+    internal content (location name, train counts, ...), not its filename --
+    e.g. scenario_config_train_cleaning_late.json produces
+    scenario_simple_service_location_4t_custom_train_cleaning_late.json -- so
+    there is no way to predict the resulting name from config_dir's filenames.
+    Comparing scenarios/ mtimes before and after is what actually identifies
+    them, scoping the run to this subset instead of every scenario the
+    location has ever accumulated.
+    """
+    before = {f: f.stat().st_mtime for f in _scenario_files(loc)}
+    _run_generator(location, version, dry_run, config_dir)
+    if dry_run:
+        return []
+    return [f for f in _scenario_files(loc) if f.stat().st_mtime != before.get(f)]
 
 
 def _instance_stem(scenario: Path) -> str:
@@ -117,6 +149,11 @@ def main() -> None:
     parser.add_argument("--tools", metavar="solver,planner", default="solver,planner",
                         help="Comma-separated subset of {solver,planner} to run "
                              "(default: both).")
+    parser.add_argument("--config-dir", metavar="DIR", type=Path,
+                        help="Use scenario_config_*.json files from this directory instead of "
+                             "<location>/configurations/. Restricts both generation and which "
+                             "instances run afterward to this subset. Mutually exclusive with "
+                             "--scenario.")
     parser.add_argument("--output-dir", required=True, metavar="DIR")
     parser.add_argument("--version", default="2.0.0")
     parser.add_argument("--max-duration", type=int, metavar="SECONDS",
@@ -134,19 +171,38 @@ def main() -> None:
     if not loc.is_dir():
         sys.exit(f"No such location: {loc}")
 
+    if args.scenario and args.config_dir:
+        sys.exit("--scenario and --config-dir are mutually exclusive.")
+    if args.config_dir and not args.config_dir.is_dir():
+        sys.exit(f"No such directory: {args.config_dir}")
+
     tools = args.tools.split(",")
     for tool in tools:
         if tool not in ("solver", "planner"):
             sys.exit(f"Unknown tool {tool!r}; --tools takes a subset of solver,planner.")
 
-    if args.scenario:
-        scenarios = [loc / "scenarios" / args.scenario]
-        if not scenarios[0].exists():
-            sys.exit(f"No such scenario: {scenarios[0]}")
+    if args.config_dir:
+        print(f"Generating scenarios for {loc.name} from {args.config_dir}...", flush=True)
+        scenarios = _run_generator_scoped(args.location, loc, args.version, args.dry_run,
+                                           args.config_dir)
+        print()
+        if not scenarios and not args.dry_run:
+            sys.exit(f"Generator produced no scenario files from {args.config_dir} "
+                      f"(check it and its configs are readable).")
     else:
-        scenarios = _scenario_files(loc)
-        if not scenarios:
-            sys.exit(f"No scenario_*.json files found under {loc}/scenarios/")
+        print(f"Generating scenarios for {loc.name}...", flush=True)
+        _run_generator(args.location, args.version, args.dry_run)
+        print()
+
+        if args.scenario:
+            scenarios = [loc / "scenarios" / args.scenario]
+            if not scenarios[0].exists() and not args.dry_run:
+                sys.exit(f"No such scenario: {scenarios[0]}")
+        else:
+            scenarios = _scenario_files(loc)
+            if not scenarios and not args.dry_run:
+                sys.exit(f"No scenario_*.json files found under {loc}/scenarios/ "
+                          f"(and none in configurations/ either).")
 
     out_dir = Path(args.output_dir)
     print(f"Running {len(scenarios)} instance(s) x {tools} against {loc.name}...\n", flush=True)

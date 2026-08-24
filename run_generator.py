@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Run the generator docker image on all scenario_config_*.json files."""
+"""Run the generator docker image on all scenario_config_*.json files, or on
+an external directory of configs via --config-dir/--location."""
 
 import argparse
 import os
@@ -26,12 +27,19 @@ def _config_name(config: Path) -> str:
     return config.stem.removeprefix("scenario_config_")
 
 
-def _run_config(docker_image: str, location_dir: Path, config: Path, dry_run: bool) -> bool:
+def _run_config(docker_image: str, location_dir: Path, config: Path, dry_run: bool,
+                 config_dir: Path = None) -> bool:
     name = _config_name(config)
     cmd = [
         "docker", "run", "--rm",
         *(["--user", f"{os.getuid()}:{os.getgid()}"] if sys.platform != "win32" else []),
         "--mount", f"type=bind,source={location_dir.resolve()},target={CONTAINER_DB}",
+        # A second, more specific mount overlays just the configurations/
+        # subpath, so the container sees config_dir's contents there instead of
+        # the location's own configurations/ -- everything else (location.json,
+        # the scenarios/ output dir) still resolves against the real location.
+        *(["--mount", f"type=bind,source={config_dir.resolve()},target={CONTAINER_DB}/configurations"]
+          if config_dir else []),
         docker_image,
         "--config", config.name,
         "--path", CONTAINER_DB,
@@ -84,7 +92,17 @@ def main() -> None:
                         help="Pick a docker image version ('legacy' no longer works against this "
                              "repo's fixtures — Phase 1 moved run_*.py to the unified format "
                              "unconditionally; 'local' is reserved for locally built images).")
+    parser.add_argument("--config-dir", metavar="DIR", type=Path,
+                        help="Use scenario_config_*.json files from this directory instead of "
+                             "<location>/configurations/ (requires --location). Overlays the "
+                             "location's own configurations/ inside the container, so only this "
+                             "directory's configs are visible for the run -- not merged with it.")
     args = parser.parse_args()
+
+    if args.config_dir and not args.location:
+        parser.error("--config-dir requires --location.")
+    if args.config_dir and not args.config_dir.is_dir():
+        parser.error(f"No such directory: {args.config_dir}")
 
     if not args.dry_run:
         ensure_docker_running()
@@ -96,13 +114,21 @@ def main() -> None:
         if not loc.is_dir():
             print(f"WARNING: {loc} not found, skipping.", file=sys.stderr)
             continue
-        configs = sorted(loc.glob("configurations/scenario_config_*.json"))
+        if args.config_dir:
+            configs = sorted(args.config_dir.glob("scenario_config_*.json"))
+            if not configs:
+                print(f"WARNING: no scenario_config_*.json found under {args.config_dir}",
+                      file=sys.stderr)
+        else:
+            configs = sorted(loc.glob("configurations/scenario_config_*.json"))
         if not configs:
             continue
-        print(f"\n{loc.name} ({len(configs)} config(s))")
+        source = f" [from {args.config_dir}]" if args.config_dir else ""
+        print(f"\n{loc.name} ({len(configs)} config(s)){source}")
         for config in configs:
             total += 1
-            if not _run_config(DOCKER_IMAGE_VERSIONS[args.version], loc, config, args.dry_run):
+            if not _run_config(DOCKER_IMAGE_VERSIONS[args.version], loc, config, args.dry_run,
+                                args.config_dir):
                 errors += 1
 
     print(f"\nDone: {total - errors}/{total} succeeded.")
