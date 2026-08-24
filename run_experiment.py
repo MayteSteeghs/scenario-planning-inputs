@@ -192,8 +192,12 @@ def main() -> None:
                              "pass conventionally runs at a multiple of the main budget, not "
                              "the same one); report_results.py's own default applies if "
                              "neither this nor --max-duration is given.")
-    parser.add_argument("--force", action="store_true",
-                         help="Re-run even if a result.json/eval_result.json already exists.")
+    parser.add_argument("--force", dest="force", action="store_true", default=True,
+                         help="Re-run even if a result.json/eval_result.json already exists "
+                              "(default: on).")
+    parser.add_argument("--skip-existing", dest="force", action="store_false",
+                         help="Skip (instance, tool) pairs that already have a "
+                              "result.json/eval_result.json, instead of re-running them.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print docker commands without executing them (evaluator steps "
                              "are skipped, since a dry run never produces a plan to evaluate).")
