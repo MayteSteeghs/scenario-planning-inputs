@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Run the HIP solver docker image on all scenario_*.json files."""
+"""Run the HIP solver docker image on all scenario_*.json files, or on one
+scenario in isolation via --scenario/--output-dir."""
 
 import argparse
+import json
 import os
 import subprocess
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from docker_utils import ensure_docker_running
@@ -72,7 +76,7 @@ def _fmt_section(d: dict, indent: int = 2) -> str:
     return "\n".join(f"{pad}{k}: {v}" for k, v in d.items())
 
 
-def _write_config(config_path: Path, scenario_name: str, plan_name: str, params: dict) -> None:
+def _write_config(config_path: Path, scenario_name: str, plan_container_path: str, params: dict) -> None:
     tabu = params.get("TabuSearch", {
         "Iterations": 40, "IterationsUntilReset": 100, "TabuListLength": 16, "Bias": 0.5,
     })
@@ -84,7 +88,7 @@ def _write_config(config_path: Path, scenario_name: str, plan_name: str, params:
     content = (
         f'LocationPath: "{CONTAINER_DB}/location.json"\n'
         f'ScenarioPath: "{CONTAINER_DB}/scenarios/{scenario_name}"\n'
-        f'PlanPath: "{CONTAINER_DB}/plans/{plan_name}"\n'
+        f'PlanPath: "{plan_container_path}"\n'
         f'Seed: {params.get("Seed", 1)}\n'
         f'DebugLevel: {params.get("DebugLevel", 0)}\n'
         f'\n'
@@ -124,7 +128,7 @@ def _run_scenario(docker_image: str, location_dir: Path, scenario: Path, dry_run
     out_file = plans_dir / f"{plan_stem}.out"
     err_file = plans_dir / f"{plan_stem}.err"
 
-    _write_config(config_path, scenario.name, plan_name, params)
+    _write_config(config_path, scenario.name, f"{CONTAINER_DB}/plans/{plan_name}", params)
     returncode = None
     ok = False
     try:
@@ -152,6 +156,76 @@ def _run_scenario(docker_image: str, location_dir: Path, scenario: Path, dry_run
     return ok
 
 
+def _run_scenario_single(docker_image: str, location_dir: Path, scenario: Path,
+                          output_dir: Path, version: str, dry_run: bool) -> dict:
+    """Run one scenario, writing plan.json/solver.out/solver.err/result.json into
+    output_dir instead of location_dir/plans/ — for experiment runs that need each
+    (instance, tool) attempt kept in its own directory rather than the shared,
+    filename-keyed plans/ folder every other scenario also writes into.
+    """
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # PID-suffixed so concurrent single-instance runs against the same location
+    # never share this file — the batch loop above never runs scenarios in
+    # parallel, so TEMP_CONFIG's fixed name was never a problem for it.
+    config_path = location_dir / f"config_solver_run.{os.getpid()}.yaml"
+    params = _parse_config(location_dir / "config_solver.yaml")
+
+    cmd = [
+        "docker", "run", "--rm",
+        *(["--user", f"{os.getuid()}:{os.getgid()}"] if sys.platform != "win32" else []),
+        "--mount", f"type=bind,source={location_dir.resolve()},target={CONTAINER_DB}",
+        "--mount", f"type=bind,source={output_dir},target=/app/output",
+        docker_image,
+        f"--config={CONTAINER_DB}/{config_path.name}",
+    ]
+
+    plan_path = output_dir / "plan.json"
+    print(f"  {scenario.name}  ->  {plan_path}")
+    if dry_run:
+        print(f"    [dry-run] {' '.join(cmd)}")
+        return {}
+
+    _write_config(config_path, scenario.name, "/app/output/plan.json", params)
+
+    out_file = output_dir / "solver.out"
+    err_file = output_dir / "solver.err"
+    start = time.monotonic()
+    start_iso = datetime.now(timezone.utc).isoformat()
+    returncode = None
+    try:
+        with open(out_file, "w") as fout, open(err_file, "w") as ferr:
+            result = subprocess.run(cmd, stdout=fout, stderr=ferr)
+        returncode = result.returncode
+    except Exception as exc:
+        print(f"    ERROR: {exc}", file=sys.stderr)
+    finally:
+        config_path.unlink(missing_ok=True)
+
+    plan_produced = plan_path.exists() and plan_path.stat().st_size > 0
+    record = {
+        "instance": scenario.stem.removeprefix("scenario_"),
+        "tool": "solver",
+        "location": location_dir.name,
+        "scenario": scenario.name,
+        "version": version,
+        "image": docker_image,
+        "command": cmd,
+        "start_time": start_iso,
+        "end_time": datetime.now(timezone.utc).isoformat(),
+        "wall_seconds": round(time.monotonic() - start, 3),
+        "exit_code": returncode,
+        "plan_produced": plan_produced,
+    }
+    (output_dir / "result.json").write_text(json.dumps(record, indent=2) + "\n")
+
+    print(f"    exit {returncode}  plan_produced={plan_produced}  "
+          f"wall={record['wall_seconds']:.1f}s")
+    if returncode != 0:
+        print(f"    FAILED (exit {returncode})", file=sys.stderr)
+    return record
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run the HIP solver on all scenario_*.json files."
@@ -164,10 +238,35 @@ def main() -> None:
                         help="Pick a docker image version ('legacy' no longer works against this "
                              "repo's fixtures — Phase 1 moved run_*.py to the unified format "
                              "unconditionally; 'local' is reserved for locally built images).")
+    parser.add_argument("--scenario", metavar="NAME",
+                        help="Run a single scenario instead of every scenario_*.json under "
+                             "the location (requires --location and --output-dir).")
+    parser.add_argument("--output-dir", metavar="DIR", type=Path,
+                        help="Write this single scenario's plan.json, solver.out/.err and "
+                             "result.json here instead of <location>/plans/ (requires "
+                             "--scenario).")
     args = parser.parse_args()
+
+    if bool(args.scenario) != bool(args.output_dir):
+        parser.error("--scenario and --output-dir must be given together.")
+    if args.scenario and not args.location:
+        parser.error("--scenario requires --location.")
 
     if not args.dry_run:
         ensure_docker_running()
+
+    if args.scenario:
+        loc = ROOT / args.location
+        if not loc.is_dir():
+            sys.exit(f"No such location: {loc}")
+        scenario = loc / "scenarios" / args.scenario
+        if not scenario.exists():
+            sys.exit(f"No such scenario: {scenario}")
+        record = _run_scenario_single(DOCKER_IMAGE_VERSIONS[args.version], loc, scenario,
+                                       args.output_dir, args.version, args.dry_run)
+        if not args.dry_run and record.get("exit_code") != 0:
+            sys.exit(1)
+        return
 
     locations = [ROOT / args.location] if args.location else sorted(ROOT.glob("Location_*/"))
 

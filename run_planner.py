@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Run the planner docker image on all scenario_*.json files.
+"""Run the planner docker image on all scenario_*.json files, or on one
+scenario in isolation via --scenario/--output-dir.
 
 An alternative to the HIP solver step, not an addition: it converts each
 scenario to PDDL, plans, and converts the result back to TORS JSON at
@@ -13,9 +14,12 @@ docker-push.sh.
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from docker_utils import ensure_docker_running
@@ -110,6 +114,71 @@ def _run_scenario(docker_image: str, location_dir: Path, scenario: Path, planner
     return ok
 
 
+def _run_scenario_single(docker_image: str, location_dir: Path, scenario: Path,
+                          planner: str, output_dir: Path, version: str, dry_run: bool) -> dict:
+    """Run one scenario, writing plan.json/planner.out/planner.err/result.json into
+    output_dir instead of location_dir/plans/ — mirrors run_solver.py's
+    --scenario/--output-dir mode so the two tools' single-instance output is laid
+    out the same way for a solver-vs-planner comparison.
+    """
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "docker", "run", "--rm",
+        *(["--user", f"{os.getuid()}:{os.getgid()}"] if sys.platform != "win32" else []),
+        "--mount", f"type=bind,source={location_dir.resolve()},target={CONTAINER_DB}",
+        "--mount", f"type=bind,source={output_dir},target=/app/output",
+        docker_image,
+        "--location", f"{CONTAINER_DB}/location.json",
+        "--scenario", f"{CONTAINER_DB}/scenarios/{scenario.name}",
+        "--planner", planner,
+        "--output", "/app/output/plan.json",
+    ]
+
+    plan_path = output_dir / "plan.json"
+    print(f"  {scenario.name}  ->  {plan_path}")
+    if dry_run:
+        print(f"    [dry-run] {' '.join(cmd)}")
+        return {}
+
+    out_file = output_dir / "planner.out"
+    err_file = output_dir / "planner.err"
+    start = time.monotonic()
+    start_iso = datetime.now(timezone.utc).isoformat()
+    returncode = None
+    try:
+        with open(out_file, "w") as fout, open(err_file, "w") as ferr:
+            result = subprocess.run(cmd, stdout=fout, stderr=ferr)
+        returncode = result.returncode
+    except Exception as exc:
+        print(f"    ERROR: {exc}", file=sys.stderr)
+
+    plan_produced = plan_path.exists() and plan_path.stat().st_size > 0
+    record = {
+        "instance": scenario.stem.removeprefix("scenario_"),
+        "tool": "planner",
+        "planner_impl": planner,
+        "location": location_dir.name,
+        "scenario": scenario.name,
+        "version": version,
+        "image": docker_image,
+        "command": cmd,
+        "start_time": start_iso,
+        "end_time": datetime.now(timezone.utc).isoformat(),
+        "wall_seconds": round(time.monotonic() - start, 3),
+        "exit_code": returncode,
+        "plan_produced": plan_produced,
+    }
+    (output_dir / "result.json").write_text(json.dumps(record, indent=2) + "\n")
+
+    print(f"    exit {returncode}  plan_produced={plan_produced}  "
+          f"wall={record['wall_seconds']:.1f}s")
+    if returncode != 0:
+        print(f"    FAILED (exit {returncode})", file=sys.stderr)
+    return record
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run the planner on all scenario_*.json files."
@@ -122,10 +191,35 @@ def main() -> None:
                         help="Pick a docker image version.")
     parser.add_argument("--planner", choices=["symbolic", "enhsp"], default="enhsp",
                         help="Planner implementation to use inside the container.")
+    parser.add_argument("--scenario", metavar="NAME",
+                        help="Run a single scenario instead of every scenario_*.json under "
+                             "the location (requires --location and --output-dir).")
+    parser.add_argument("--output-dir", metavar="DIR", type=Path,
+                        help="Write this single scenario's plan.json, planner.out/.err and "
+                             "result.json here instead of <location>/plans/ (requires "
+                             "--scenario).")
     args = parser.parse_args()
+
+    if bool(args.scenario) != bool(args.output_dir):
+        parser.error("--scenario and --output-dir must be given together.")
+    if args.scenario and not args.location:
+        parser.error("--scenario requires --location.")
 
     if not args.dry_run:
         ensure_docker_running()
+
+    if args.scenario:
+        loc = ROOT / args.location
+        if not loc.is_dir():
+            sys.exit(f"No such location: {loc}")
+        scenario = loc / "scenarios" / args.scenario
+        if not scenario.exists():
+            sys.exit(f"No such scenario: {scenario}")
+        record = _run_scenario_single(DOCKER_IMAGE_VERSIONS[args.version], loc, scenario,
+                                       args.planner, args.output_dir, args.version, args.dry_run)
+        if not args.dry_run and record.get("exit_code") != 0:
+            sys.exit(1)
+        return
 
     locations = [ROOT / args.location] if args.location else sorted(ROOT.glob("Location_*/"))
 
