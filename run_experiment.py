@@ -21,6 +21,10 @@ planning) so every configurations/scenario_config_*.json has a matching
 scenarios/scenario_*.json before instances are resolved. --config-dir
 restricts both generation and the instances that follow it to one external
 directory of configs, instead of the location's own configurations/.
+
+Finishes by running report_results.py over --output-dir, writing runs.csv and
+feasibility.csv there -- skipped on --dry-run, since a dry run's results are
+never fresh.
 """
 
 import argparse
@@ -35,6 +39,28 @@ ROOT = Path(__file__).resolve().parent
 # tool field run_solver.py and run_planner.py themselves write), but the
 # per-instance output directory is named after the search approach instead.
 FOLDER_NAMES = {"solver": "local_search", "planner": "planning"}
+
+
+# A certification pass is conventionally run at a multiple of the main budget
+# (see the experimental-setup doc's "certification runs" protocol), not the
+# same T -- so the default threshold isn't just --max-duration itself.
+CERTIFY_MULTIPLIER = 6
+
+
+def _run_report(out_dir: Path, max_duration, certify_threshold) -> None:
+    # --certify-threshold, if given directly, wins outright. Otherwise derive
+    # it from --max-duration (this invocation's own budget input) rather than
+    # an independently-guessed number; report_results.py's own default
+    # applies only when neither --max-duration nor --certify-threshold was given.
+    if certify_threshold is None and max_duration is not None:
+        certify_threshold = CERTIFY_MULTIPLIER * max_duration
+    cmd = [
+        sys.executable, str(ROOT / "report_results.py"), str(out_dir),
+        "--runs-csv", str(out_dir / "runs.csv"),
+        "--feasibility-csv", str(out_dir / "feasibility.csv"),
+        *(["--certify-threshold", str(certify_threshold)] if certify_threshold is not None else []),
+    ]
+    subprocess.run(cmd, cwd=ROOT)
 
 
 def _run_generator(location: str, version: str, dry_run: bool, config_dir: Path = None) -> None:
@@ -160,6 +186,12 @@ def main() -> None:
                         help="Wall-clock budget passed through to each solver/planner run. "
                              "Both kill their container directly if exceeded; see "
                              "run_solver.py/run_planner.py --help.")
+    parser.add_argument("--certify-threshold", type=int, metavar="SECONDS",
+                        help="Passed through to report_results.py's --certify-threshold. "
+                             f"Default: {CERTIFY_MULTIPLIER} x --max-duration (a certification "
+                             "pass conventionally runs at a multiple of the main budget, not "
+                             "the same one); report_results.py's own default applies if "
+                             "neither this nor --max-duration is given.")
     parser.add_argument("--force", action="store_true",
                          help="Re-run even if a result.json/eval_result.json already exists.")
     parser.add_argument("--dry-run", action="store_true",
@@ -214,13 +246,17 @@ def main() -> None:
                                                args.version, args.force, args.dry_run,
                                                args.max_duration)
 
-    print("\n--- Summary ---")
+    print("\n--- Summary ---", flush=True)
     for instance, per_tool in all_results.items():
         line = "  ".join(
             f"{tool}={'solved' if (r['eval'] and r['eval'].get('solved')) else 'unsolved'}"
             for tool, r in per_tool.items()
         )
-        print(f"  {instance}: {line}")
+        print(f"  {instance}: {line}", flush=True)
+
+    if not args.dry_run:
+        print(flush=True)
+        _run_report(out_dir, args.max_duration, args.certify_threshold)
 
 
 if __name__ == "__main__":
