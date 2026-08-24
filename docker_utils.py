@@ -4,6 +4,7 @@
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 
 def ensure_docker_running() -> None:
@@ -26,3 +27,28 @@ def ensure_docker_running() -> None:
         if stderr:
             print(f"  docker info said: {stderr.splitlines()[-1]}", file=sys.stderr)
         sys.exit(1)
+
+
+def run_with_timeout(cmd: list, out_file: Path, err_file: Path, container_name: str,
+                      max_duration) -> tuple:
+    """Run a `docker run --name container_name ...` command, capturing stdout/
+    stderr to files. If max_duration is exceeded, kill the container directly
+    rather than relying on subprocess's own timeout: that only kills the local
+    `docker run` client process, which does not stop the container itself — it
+    keeps running in the daemon, since --rm's cleanup depends on the client
+    living long enough to see it exit. cmd must include "--name", container_name
+    for this to be able to target it. Returns (exit_code_or_None, timed_out).
+    """
+    try:
+        with open(out_file, "w") as fout, open(err_file, "w") as ferr:
+            result = subprocess.run(cmd, stdout=fout, stderr=ferr, timeout=max_duration)
+        return result.returncode, False
+    except subprocess.TimeoutExpired:
+        subprocess.run(["docker", "kill", container_name],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with open(err_file, "a") as ferr:
+            ferr.write(f"--- killed: exceeded --max-duration {max_duration}s\n")
+        return None, True
+    except Exception as exc:
+        print(f"    ERROR: {exc}", file=sys.stderr)
+        return None, False
