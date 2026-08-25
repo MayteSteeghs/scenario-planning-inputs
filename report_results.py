@@ -17,7 +17,10 @@ everything downstream treats a 5-seed local_search the same as a solitary one.
                       plan.json -- independent of what the evaluator later says
                       about it), timed_out, valid_plan (the evaluator's verdict
                       on that plan -- blank if no plan was ever produced to
-                      evaluate), and how many wall-clock seconds the run took.
+                      evaluate), plan_length and move_actions (counted from
+                      plan.json's own "actions" list -- total actions, and
+                      how many have taskType.predefined == "Move"; blank if
+                      no plan), and how many wall-clock seconds the run took.
                       plan_found and valid_plan are deliberately separate
                       facts: a tool can find a plan the evaluator then rejects,
                       and collapsing that into one column read as "no" for
@@ -79,6 +82,19 @@ def _scenario_level_rejection(tool_dir: Path) -> bool:
     return "Issue detected with the Scenario" in text
 
 
+def _plan_stats(tool_dir: Path) -> tuple:
+    """(plan_length, move_actions) counted straight from plan.json's own
+    "actions" list -- total actions, and how many have
+    taskType.predefined == "Move". (None, None) if there's no plan to count.
+    """
+    plan = _read_json(tool_dir / "plan.json")
+    actions = plan.get("actions")
+    if actions is None:
+        return None, None
+    moves = sum(1 for a in actions if (a.get("taskType") or {}).get("predefined") == "Move")
+    return len(actions), moves
+
+
 def _tool_row(instance: str, tool: str, tool_dir: Path) -> dict:
     result = _read_json(tool_dir / "result.json")
     if not result:
@@ -86,6 +102,7 @@ def _tool_row(instance: str, tool: str, tool_dir: Path) -> dict:
 
     eval_result = _read_json(tool_dir / "eval_result.json")
     verdict = eval_result.get("verdict")
+    plan_length, move_actions = _plan_stats(tool_dir)
 
     return {
         "instance": instance,
@@ -94,6 +111,8 @@ def _tool_row(instance: str, tool: str, tool_dir: Path) -> dict:
         "plan_found": "yes" if result.get("plan_produced") else "no",
         "timed_out": "yes" if result.get("timed_out") else "no",
         "valid_plan": "yes" if verdict == "accepted" else ("no" if verdict else ""),
+        "plan_length": plan_length if plan_length is not None else "",
+        "move_actions": move_actions if move_actions is not None else "",
         "seconds": result.get("wall_seconds", ""),
     }
 
@@ -164,7 +183,11 @@ def main() -> None:
 
     with open(args.runs_csv, "w", newline="") as f:
         writer = csv.DictWriter(
-            f, fieldnames=["instance", "tool", "seed", "plan_found", "timed_out", "valid_plan", "seconds"]
+            f,
+            fieldnames=[
+                "instance", "tool", "seed", "plan_found", "timed_out", "valid_plan",
+                "plan_length", "move_actions", "seconds",
+            ],
         )
         writer.writeheader()
         writer.writerows(run_rows)
