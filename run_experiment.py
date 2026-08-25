@@ -11,6 +11,11 @@ approach rather than the script that drives it:
                                           eval.out/.err, eval_result.json
   <output-dir>/<instance>/planning/      same layout
 
+--num-seeds N runs the solver N times per instance instead of once, each
+seed getting its own local_search/seed<i>/ subdirectory with that same
+layout (planning is unaffected -- run_planner.py has no seed concept).
+report_results.py/coverage_analysis.py detect and handle both layouts.
+
 result.json (written by run_solver.py/run_planner.py) records whether the
 tool produced a plan; eval_result.json (written by run_evaluator.py, only
 when a plan was produced) carries the "solved" verdict — solved is decided
@@ -116,12 +121,15 @@ def _instance_stem(scenario: Path) -> str:
     return scenario.stem.removeprefix("scenario_")
 
 
-def _write_progress(out_dir: Path, scenarios: list, tools: list, all_results: dict) -> None:
+def _write_progress(out_dir: Path, scenarios: list, tools: list, all_results: dict,
+                     num_seeds=None) -> None:
     """Rewrite progress.csv from the current in-memory results -- called after
-    every (instance, tool) attempt finishes, so it always reflects exactly how
-    far the run has gotten, including instances not yet started (blank cells)
-    and tools outside --tools for this run (also blank, since they were never
-    in scope here, not because they're pending).
+    every (instance, tool[, seed]) attempt finishes, so it always reflects
+    exactly how far the run has gotten, including instances not yet started
+    (blank cells) and tools outside --tools for this run (also blank, since
+    they were never in scope here, not because they're pending). With
+    --num-seeds, local_search shows "k/N" until all N seeds for that instance
+    are done, then "done" -- planning never has seeds, so it's unaffected.
     """
     with open(out_dir / "progress.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["instance", "local_search", "planning"])
@@ -129,15 +137,20 @@ def _write_progress(out_dir: Path, scenarios: list, tools: list, all_results: di
         for scenario in scenarios:
             instance = _instance_stem(scenario)
             done = all_results.get(instance, {})
+            if num_seeds:
+                n_done = sum(1 for s in range(1, num_seeds + 1) if f"solver_seed{s}" in done)
+                local_search = "done" if n_done == num_seeds else (f"{n_done}/{num_seeds}" if n_done else "")
+            else:
+                local_search = "done" if "solver" in done else ""
             writer.writerow({
                 "instance": instance,
-                "local_search": "done" if "solver" in done else "",
+                "local_search": local_search,
                 "planning": "done" if "planner" in done else "",
             })
 
 
 def _run_tool(tool: str, location: str, scenario: Path, out_dir: Path,
-              version: str, force: bool, dry_run: bool, max_duration) -> dict:
+              version: str, force: bool, dry_run: bool, max_duration, seed) -> dict:
     result_path = out_dir / "result.json"
     if result_path.exists() and not force:
         print(f"  SKIP {tool} (result.json exists): {out_dir}")
@@ -150,6 +163,8 @@ def _run_tool(tool: str, location: str, scenario: Path, out_dir: Path,
         "--output-dir", str(out_dir), "--version", version,
         *(["--dry-run"] if dry_run else []),
         *(["--max-duration", str(max_duration)] if max_duration is not None else []),
+        # --seed is solver-only; run_planner.py has no seed concept at all.
+        *(["--seed", str(seed)] if seed is not None and tool == "solver" else []),
     ]
     subprocess.run(cmd, cwd=ROOT)
     return json.loads(result_path.read_text()) if result_path.exists() else {
@@ -176,28 +191,43 @@ def _run_evaluator(location: str, scenario: Path, plan_path: Path, version: str,
     }
 
 
+def _run_and_record(tool: str, location: str, scenario: Path, tool_dir: Path, version: str,
+                     force: bool, dry_run: bool, max_duration, seed, results: dict, key: str) -> None:
+    run_result = _run_tool(tool, location, scenario, tool_dir, version, force, dry_run,
+                            max_duration, seed)
+    eval_result = None
+    # A dry run never produces a real plan.json, so there is nothing for the
+    # evaluator to dry-run against either — skip it rather than have it fail
+    # a "no such plan file" check that would be misleading here.
+    if not dry_run and run_result.get("plan_produced"):
+        eval_result = _run_evaluator(location, scenario, tool_dir / "plan.json",
+                                      version, force, dry_run)
+    results[key] = {"run": run_result, "eval": eval_result}
+    solved = bool(eval_result and eval_result.get("solved"))
+    instance = scenario.stem.removeprefix("scenario_")
+    print(f"  {instance} [{key}]  plan_produced={run_result.get('plan_produced')}  "
+          f"solved={solved}")
+
+
 def _run_instance(location: str, scenario: Path, tools: list, out_dir: Path,
-                   version: str, force: bool, dry_run: bool, max_duration,
+                   version: str, force: bool, dry_run: bool, max_duration, seed, num_seeds,
                    all_results: dict, all_scenarios: list) -> None:
     instance = _instance_stem(scenario)
     results = all_results.setdefault(instance, {})
     for tool in tools:
-        tool_dir = out_dir / instance / FOLDER_NAMES[tool]
-        run_result = _run_tool(tool, location, scenario, tool_dir, version, force, dry_run,
-                                max_duration)
-        eval_result = None
-        # A dry run never produces a real plan.json, so there is nothing for the
-        # evaluator to dry-run against either — skip it rather than have it fail
-        # a "no such plan file" check that would be misleading here.
-        if not dry_run and run_result.get("plan_produced"):
-            eval_result = _run_evaluator(location, scenario, tool_dir / "plan.json",
-                                          version, force, dry_run)
-        results[tool] = {"run": run_result, "eval": eval_result}
-        solved = bool(eval_result and eval_result.get("solved"))
-        print(f"  {instance} [{tool}]  plan_produced={run_result.get('plan_produced')}  "
-              f"solved={solved}")
-        if not dry_run:
-            _write_progress(out_dir, all_scenarios, tools, all_results)
+        if tool == "solver" and num_seeds:
+            for s in range(1, num_seeds + 1):
+                tool_dir = out_dir / instance / FOLDER_NAMES[tool] / f"seed{s}"
+                _run_and_record(tool, location, scenario, tool_dir, version, force, dry_run,
+                                 max_duration, s, results, f"solver_seed{s}")
+                if not dry_run:
+                    _write_progress(out_dir, all_scenarios, tools, all_results, num_seeds)
+        else:
+            tool_dir = out_dir / instance / FOLDER_NAMES[tool]
+            _run_and_record(tool, location, scenario, tool_dir, version, force, dry_run,
+                             max_duration, seed, results, tool)
+            if not dry_run:
+                _write_progress(out_dir, all_scenarios, tools, all_results, num_seeds)
 
 
 def main() -> None:
@@ -211,8 +241,9 @@ def main() -> None:
                         help="Run a single scenario instead of every scenario_*.json under "
                              "the location.")
     parser.add_argument("--tools", metavar="solver,planner", default="solver,planner",
-                        help="Comma-separated subset of {solver,planner} to run "
-                             "(default: both).")
+                        help="Comma-separated subset of {solver,planner} to run (default: "
+                             "both). planner is currently disabled, see below -- the default "
+                             "will fail until it's fixed or you pass --tools solver.")
     parser.add_argument("--config-dir", metavar="DIR", type=Path,
                         help="Use scenario_config_*.json files from this directory instead of "
                              "<location>/configurations/. Restricts both generation and which "
@@ -224,6 +255,18 @@ def main() -> None:
                         help="Wall-clock budget passed through to each solver/planner run. "
                              "Both kill their container directly if exceeded; see "
                              "run_solver.py/run_planner.py --help.")
+    parser.add_argument("--seed", type=int, metavar="N",
+                        help="Passed through to run_solver.py's --seed (solver only -- "
+                             "run_planner.py has no seed concept). Without this, every run "
+                             "already uses the same implicit seed (1), so this is for "
+                             "deliberately varying it. Mutually exclusive with --num-seeds.")
+    parser.add_argument("--num-seeds", type=int, metavar="N",
+                        help="Run the solver N times per instance with seeds 1..N, each into "
+                             "its own <instance>/local_search/seed<i>/ -- the experimental-"
+                             "setup doc's main-run protocol (\"the local-search solver five "
+                             "times with recorded seeds\"). Solver only: --tools planner still "
+                             "runs once regardless, since run_planner.py has no seed concept. "
+                             "Mutually exclusive with --seed.")
     parser.add_argument("--certify-threshold", type=int, metavar="SECONDS",
                         help="Passed through to report_results.py's --certify-threshold. "
                              f"Default: {CERTIFY_MULTIPLIER} x --max-duration (a certification "
@@ -249,11 +292,27 @@ def main() -> None:
         sys.exit("--scenario and --config-dir are mutually exclusive.")
     if args.config_dir and not args.config_dir.is_dir():
         sys.exit(f"No such directory: {args.config_dir}")
+    if args.seed is not None and args.num_seeds is not None:
+        sys.exit("--seed and --num-seeds are mutually exclusive.")
+    if args.num_seeds is not None and args.num_seeds < 1:
+        sys.exit("--num-seeds must be at least 1.")
 
     tools = args.tools.split(",")
     for tool in tools:
         if tool not in ("solver", "planner"):
             sys.exit(f"Unknown tool {tool!r}; --tools takes a subset of solver,planner.")
+    # planner is disabled for now: the planner image's plan-to-TORS converter
+    # doesn't handle several action types the current image emits, so every
+    # planner run fails before producing a plan (verified against
+    # KleineBinckhorst scenarios) -- rather than let --tools silently burn
+    # time on runs that can't succeed, refuse it outright. Re-enable by
+    # deleting this check once planning-approach's converter is fixed; nothing
+    # else in this file assumes planner is unavailable.
+    if "planner" in tools:
+        sys.exit("planner is currently disabled (known converter-gap bug in the planner "
+                  "image -- every run fails before producing a plan). Use --tools solver.")
+    if args.num_seeds is not None and "solver" not in tools:
+        sys.exit("--num-seeds only applies to the solver; include it in --tools.")
 
     if args.config_dir:
         print(f"Generating scenarios for {loc.name} from {args.config_dir}...", flush=True)
@@ -282,12 +341,13 @@ def main() -> None:
     print(f"Running {len(scenarios)} instance(s) x {tools} against {loc.name}...\n", flush=True)
 
     all_results = {}
-    if not args.dry_run:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        _write_progress(out_dir, scenarios, tools, all_results)
-    for scenario in scenarios:
-        _run_instance(args.location, scenario, tools, out_dir, args.version, args.force,
-                      args.dry_run, args.max_duration, all_results, scenarios)
+    # if not args.dry_run:
+    #     out_dir.mkdir(parents=True, exist_ok=True)
+    #     _write_progress(out_dir, scenarios, tools, all_results, args.num_seeds)
+    # for scenario in scenarios:
+    #     _run_instance(args.location, scenario, tools, out_dir, args.version, args.force,
+    #                   args.dry_run, args.max_duration, args.seed, args.num_seeds,
+    #                   all_results, scenarios)
 
     print("\n--- Summary ---", flush=True)
     for instance, per_tool in all_results.items():

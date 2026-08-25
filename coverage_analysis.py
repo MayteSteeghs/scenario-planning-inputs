@@ -64,8 +64,19 @@ def mcnemar_exact_p(n_a_only: int, n_b_only: int) -> float:
 
 
 def _tool_solved(instance_dir: Path, folder: str) -> bool:
-    eval_result = rr._read_json(instance_dir / folder / "eval_result.json")
-    return bool(eval_result.get("solved"))
+    """True if ANY run under this tool's folder was evaluator-confirmed
+    solved -- a single run (no --num-seeds), or any one of several seed*/
+    subdirectories (--num-seeds): the doc's coverage definition is per
+    instance per solver, and a solver that finds a plan on any one of its
+    seeds has covered that instance.
+    """
+    direct = rr._read_json(instance_dir / folder / "eval_result.json")
+    if direct:
+        return bool(direct.get("solved"))
+    return any(
+        rr._read_json(seed_dir / "eval_result.json").get("solved")
+        for seed_dir in sorted((instance_dir / folder).glob("seed*"))
+    )
 
 
 def _format_subset(label: str, solver: list, planner: list) -> str:

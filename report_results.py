@@ -5,9 +5,17 @@ Reads whatever result.json / eval_result.json / eval.out / eval.err files
 run_experiment.py already wrote under <results-dir>/<instance>/{local_search,planning}/
 -- this does not run anything itself.
 
-  --runs-csv         One row per (instance, tool) attempt that was actually run:
-                      solved (yes/no/timeout), the evaluator's plan_valid verdict,
-                      and how many wall-clock seconds the run took.
+local_search holds either one run directly (single --seed, or none) or one
+subdirectory per seed (--num-seeds, seed1/, seed2/, ...) -- _tool_dirs below
+detects which and yields one (label, dir) pair per actual run either way, so
+everything downstream treats a 5-seed local_search the same as a solitary one.
+
+  --runs-csv         One row per (instance, tool) attempt that was actually run
+                      -- tool is "local_search_seed3" etc. when --num-seeds was
+                      used, plain "local_search"/"planning" otherwise: the seed
+                      actually used, solved (yes/no/timeout), the evaluator's
+                      plan_valid verdict, and how many wall-clock seconds the
+                      run took.
   --feasibility-csv  One row per instance: feasible (some tool's plan was
                       confirmed valid) / infeasible (the evaluator flagged the
                       scenario itself, not just one plan) / unresolved
@@ -31,11 +39,29 @@ from pathlib import Path
 
 # Matches run_experiment.py's FOLDER_NAMES: the folder name is the search
 # approach, not the script/--tools name.
-FOLDER_TOOL = {"local_search": "local_search", "planning": "planning"}
+TOOL_FOLDERS = ("local_search", "planning")
 
 
 def _read_json(path: Path) -> dict:
     return json.loads(path.read_text()) if path.exists() else {}
+
+
+def _tool_dirs(instance_dir: Path) -> list:
+    """(label, dir) for every actual run under this instance: "local_search"/
+    "planning" directly if that folder has a result.json of its own, or
+    "local_search_seed<N>" per seed*/ subdirectory when --num-seeds was used
+    (planning never has seeds -- run_planner.py has no seed concept).
+    """
+    pairs = []
+    for folder in TOOL_FOLDERS:
+        tool_dir = instance_dir / folder
+        if (tool_dir / "result.json").exists():
+            pairs.append((folder, tool_dir))
+        elif tool_dir.is_dir():
+            for seed_dir in sorted(tool_dir.glob("seed*")):
+                if (seed_dir / "result.json").exists():
+                    pairs.append((f"{folder}_{seed_dir.name}", seed_dir))
+    return pairs
 
 
 def _scenario_level_rejection(tool_dir: Path) -> bool:
@@ -65,6 +91,7 @@ def _tool_row(instance: str, tool: str, tool_dir: Path) -> dict:
     return {
         "instance": instance,
         "tool": tool,
+        "seed": result.get("seed", ""),
         "solved": solved,
         "plan_valid": "yes" if verdict == "accepted" else ("no" if verdict else ""),
         "seconds": result.get("wall_seconds", ""),
@@ -75,8 +102,7 @@ def _instance_feasibility(instance: str, instance_dir: Path, certify_threshold: 
     any_solved = False
     any_infeasible = False
     any_certified = False
-    for folder in FOLDER_TOOL:
-        tool_dir = instance_dir / folder
+    for _, tool_dir in _tool_dirs(instance_dir):
         result = _read_json(tool_dir / "result.json")
         eval_result = _read_json(tool_dir / "eval_result.json")
         if eval_result.get("solved"):
@@ -128,8 +154,8 @@ def main() -> None:
     feasibility_rows = []
     for instance_dir in instance_dirs:
         instance = instance_dir.name
-        for folder, tool in FOLDER_TOOL.items():
-            row = _tool_row(instance, tool, instance_dir / folder)
+        for tool_label, tool_dir in _tool_dirs(instance_dir):
+            row = _tool_row(instance, tool_label, tool_dir)
             if row:
                 run_rows.append(row)
         feasibility_rows.append(
@@ -137,7 +163,7 @@ def main() -> None:
         )
 
     with open(args.runs_csv, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["instance", "tool", "solved", "plan_valid", "seconds"])
+        writer = csv.DictWriter(f, fieldnames=["instance", "tool", "seed", "solved", "plan_valid", "seconds"])
         writer.writeheader()
         writer.writerows(run_rows)
 

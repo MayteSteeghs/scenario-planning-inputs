@@ -159,7 +159,7 @@ def _run_scenario(docker_image: str, location_dir: Path, scenario: Path, dry_run
 
 def _run_scenario_single(docker_image: str, location_dir: Path, scenario: Path,
                           output_dir: Path, version: str, dry_run: bool,
-                          max_duration=None) -> dict:
+                          max_duration=None, seed=None) -> dict:
     """Run one scenario, writing plan.json/solver.out/solver.err/result.json into
     output_dir instead of location_dir/plans/ — for experiment runs that need each
     (instance, tool) attempt kept in its own directory rather than the shared,
@@ -172,6 +172,12 @@ def _run_scenario_single(docker_image: str, location_dir: Path, scenario: Path,
     # parallel, so TEMP_CONFIG's fixed name was never a problem for it.
     config_path = location_dir / f"config_solver_run.{os.getpid()}.yaml"
     params = _parse_config(location_dir / "config_solver.yaml")
+    if seed is not None:
+        params["Seed"] = seed
+    # What actually lands in the generated YAML's Seed: line -- _write_config
+    # falls back to 1 when this key is absent, same as the location's own
+    # config_solver.yaml already implicitly does today.
+    seed_used = params.get("Seed", 1)
     container_name = f"solver-{uuid.uuid4().hex[:12]}"
 
     cmd = [
@@ -211,6 +217,7 @@ def _run_scenario_single(docker_image: str, location_dir: Path, scenario: Path,
         "image": docker_image,
         "command": cmd,
         "max_duration": max_duration,
+        "seed": seed_used,
         "start_time": start_iso,
         "end_time": datetime.now(timezone.utc).isoformat(),
         "wall_seconds": round(time.monotonic() - start, 3),
@@ -254,6 +261,14 @@ def main() -> None:
                              "than relying on the SimulatedAnnealing.MaxDuration config knob, "
                              "so a stuck run cannot outlive the budget regardless of what the "
                              "location's config_solver.yaml says.")
+    parser.add_argument("--seed", type=int, metavar="N",
+                        help="Override the solver's random seed for this run (requires "
+                             "--scenario). The solver already seeds deterministically from "
+                             "config_solver.yaml's Seed field -- this repo's own generated "
+                             "runtime config defaults that to 1 when the location's file "
+                             "doesn't set one, so runs are already reproducible without this "
+                             "flag; it exists to vary the seed on purpose, e.g. running "
+                             "several distinct seeds per instance.")
     args = parser.parse_args()
 
     if bool(args.scenario) != bool(args.output_dir):
@@ -262,6 +277,8 @@ def main() -> None:
         parser.error("--scenario requires --location.")
     if args.max_duration and not args.scenario:
         parser.error("--max-duration requires --scenario.")
+    if args.seed is not None and not args.scenario:
+        parser.error("--seed requires --scenario.")
 
     if not args.dry_run:
         ensure_docker_running()
@@ -275,7 +292,7 @@ def main() -> None:
             sys.exit(f"No such scenario: {scenario}")
         record = _run_scenario_single(DOCKER_IMAGE_VERSIONS[args.version], loc, scenario,
                                        args.output_dir, args.version, args.dry_run,
-                                       args.max_duration)
+                                       args.max_duration, args.seed)
         if not args.dry_run and record.get("exit_code") != 0:
             sys.exit(1)
         return
