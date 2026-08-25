@@ -23,8 +23,10 @@ restricts both generation and the instances that follow it to one external
 directory of configs, instead of the location's own configurations/.
 
 Finishes by running report_results.py over --output-dir, writing runs.csv and
-feasibility.csv there -- skipped on --dry-run, since a dry run's results are
-never fresh.
+feasibility.csv there, then coverage_analysis.py, writing
+coverage_analysis.txt (RQ1 coverage + Wilson intervals + exact McNemar test,
+per the experimental-setup doc) -- both skipped on --dry-run, since a dry
+run's results are never fresh.
 
 progress.csv (instance, local_search, planning -- "done"/blank) is rewritten
 in --output-dir after every (instance, tool) attempt finishes, whether that
@@ -65,6 +67,14 @@ def _run_report(out_dir: Path, max_duration, certify_threshold) -> None:
         "--runs-csv", str(out_dir / "runs.csv"),
         "--feasibility-csv", str(out_dir / "feasibility.csv"),
         *(["--certify-threshold", str(certify_threshold)] if certify_threshold is not None else []),
+    ]
+    subprocess.run(cmd, cwd=ROOT)
+
+
+def _run_coverage_analysis(out_dir: Path) -> None:
+    cmd = [
+        sys.executable, str(ROOT / "coverage_analysis.py"), str(out_dir),
+        "--output", str(out_dir / "coverage_analysis.txt"),
     ]
     subprocess.run(cmd, cwd=ROOT)
 
@@ -290,6 +300,8 @@ def main() -> None:
     if not args.dry_run:
         print(flush=True)
         _run_report(out_dir, args.max_duration, args.certify_threshold)
+        print(flush=True)
+        _run_coverage_analysis(out_dir)
 
 
 if __name__ == "__main__":
