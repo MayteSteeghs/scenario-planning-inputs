@@ -25,9 +25,15 @@ directory of configs, instead of the location's own configurations/.
 Finishes by running report_results.py over --output-dir, writing runs.csv and
 feasibility.csv there -- skipped on --dry-run, since a dry run's results are
 never fresh.
+
+progress.csv (instance, local_search, planning -- "done"/blank) is rewritten
+in --output-dir after every (instance, tool) attempt finishes, whether that
+finish came from a real evaluator call or from the tool failing/timing out
+before ever reaching one -- a live view of how far a long run has gotten.
 """
 
 import argparse
+import csv
 import json
 import subprocess
 import sys
@@ -100,6 +106,26 @@ def _instance_stem(scenario: Path) -> str:
     return scenario.stem.removeprefix("scenario_")
 
 
+def _write_progress(out_dir: Path, scenarios: list, tools: list, all_results: dict) -> None:
+    """Rewrite progress.csv from the current in-memory results -- called after
+    every (instance, tool) attempt finishes, so it always reflects exactly how
+    far the run has gotten, including instances not yet started (blank cells)
+    and tools outside --tools for this run (also blank, since they were never
+    in scope here, not because they're pending).
+    """
+    with open(out_dir / "progress.csv", "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["instance", "local_search", "planning"])
+        writer.writeheader()
+        for scenario in scenarios:
+            instance = _instance_stem(scenario)
+            done = all_results.get(instance, {})
+            writer.writerow({
+                "instance": instance,
+                "local_search": "done" if "solver" in done else "",
+                "planning": "done" if "planner" in done else "",
+            })
+
+
 def _run_tool(tool: str, location: str, scenario: Path, out_dir: Path,
               version: str, force: bool, dry_run: bool, max_duration) -> dict:
     result_path = out_dir / "result.json"
@@ -141,9 +167,10 @@ def _run_evaluator(location: str, scenario: Path, plan_path: Path, version: str,
 
 
 def _run_instance(location: str, scenario: Path, tools: list, out_dir: Path,
-                   version: str, force: bool, dry_run: bool, max_duration) -> dict:
+                   version: str, force: bool, dry_run: bool, max_duration,
+                   all_results: dict, all_scenarios: list) -> None:
     instance = _instance_stem(scenario)
-    results = {}
+    results = all_results.setdefault(instance, {})
     for tool in tools:
         tool_dir = out_dir / instance / FOLDER_NAMES[tool]
         run_result = _run_tool(tool, location, scenario, tool_dir, version, force, dry_run,
@@ -159,7 +186,8 @@ def _run_instance(location: str, scenario: Path, tools: list, out_dir: Path,
         solved = bool(eval_result and eval_result.get("solved"))
         print(f"  {instance} [{tool}]  plan_produced={run_result.get('plan_produced')}  "
               f"solved={solved}")
-    return results
+        if not dry_run:
+            _write_progress(out_dir, all_scenarios, tools, all_results)
 
 
 def main() -> None:
@@ -244,11 +272,12 @@ def main() -> None:
     print(f"Running {len(scenarios)} instance(s) x {tools} against {loc.name}...\n", flush=True)
 
     all_results = {}
+    if not args.dry_run:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        _write_progress(out_dir, scenarios, tools, all_results)
     for scenario in scenarios:
-        instance = _instance_stem(scenario)
-        all_results[instance] = _run_instance(args.location, scenario, tools, out_dir,
-                                               args.version, args.force, args.dry_run,
-                                               args.max_duration)
+        _run_instance(args.location, scenario, tools, out_dir, args.version, args.force,
+                      args.dry_run, args.max_duration, all_results, scenarios)
 
     print("\n--- Summary ---", flush=True)
     for instance, per_tool in all_results.items():
