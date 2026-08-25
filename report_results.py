@@ -13,9 +13,15 @@ everything downstream treats a 5-seed local_search the same as a solitary one.
   --runs-csv         One row per (instance, tool) attempt that was actually run
                       -- tool is "local_search_seed3" etc. when --num-seeds was
                       used, plain "local_search"/"planning" otherwise: the seed
-                      actually used, solved (yes/no/timeout), the evaluator's
-                      plan_valid verdict, and how many wall-clock seconds the
-                      run took.
+                      actually used, plan_found (did the tool itself produce a
+                      plan.json -- independent of what the evaluator later says
+                      about it), timed_out, valid_plan (the evaluator's verdict
+                      on that plan -- blank if no plan was ever produced to
+                      evaluate), and how many wall-clock seconds the run took.
+                      plan_found and valid_plan are deliberately separate
+                      facts: a tool can find a plan the evaluator then rejects,
+                      and collapsing that into one column read as "no" for
+                      both looks identical to the tool failing outright.
   --feasibility-csv  One row per instance: feasible (some tool's plan was
                       confirmed valid) / infeasible (the evaluator flagged the
                       scenario itself, not just one plan) / unresolved
@@ -81,19 +87,13 @@ def _tool_row(instance: str, tool: str, tool_dir: Path) -> dict:
     eval_result = _read_json(tool_dir / "eval_result.json")
     verdict = eval_result.get("verdict")
 
-    if result.get("timed_out"):
-        solved = "timeout"
-    elif eval_result.get("solved"):
-        solved = "yes"
-    else:
-        solved = "no"
-
     return {
         "instance": instance,
         "tool": tool,
         "seed": result.get("seed", ""),
-        "solved": solved,
-        "plan_valid": "yes" if verdict == "accepted" else ("no" if verdict else ""),
+        "plan_found": "yes" if result.get("plan_produced") else "no",
+        "timed_out": "yes" if result.get("timed_out") else "no",
+        "valid_plan": "yes" if verdict == "accepted" else ("no" if verdict else ""),
         "seconds": result.get("wall_seconds", ""),
     }
 
@@ -163,7 +163,9 @@ def main() -> None:
         )
 
     with open(args.runs_csv, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["instance", "tool", "seed", "solved", "plan_valid", "seconds"])
+        writer = csv.DictWriter(
+            f, fieldnames=["instance", "tool", "seed", "plan_found", "timed_out", "valid_plan", "seconds"]
+        )
         writer.writeheader()
         writer.writerows(run_rows)
 
