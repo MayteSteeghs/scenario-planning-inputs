@@ -32,7 +32,7 @@ jobs:
     # validate-fixtures.yml's static JSON Schema check can't see. All three
     # images are public on ghcr.io, so no registry auth is needed.
     - name: Run the pipeline against Location_SimpleService
-      run: python3 run_pipeline.py --location Location_SimpleService --version 2.0.0
+      run: python3 run_pipeline.py --location Location_SimpleService --version stable
 
     - name: Show solver/evaluator output on failure
       if: failure()

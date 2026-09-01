@@ -1,7 +1,7 @@
 
-LocationPath: "/workspace/scenario-planning-inputs/Location_SimpleService/location_solver.json"
-ScenarioPath: "/workspace/scenario-planning-inputs/Location_SimpleService/scenarios/scenario_solver_train_cleaning_late.json"
-PlanPath: "/workspace/scenario-planning-inputs/Location_SimpleService/plans/plan_train_cleaning_late.json"
+LocationPath: "/workspace/robust-rail-general/Location_SimpleService/location_solver.json"
+ScenarioPath: "/workspace/robust-rail-general/Location_SimpleService/scenarios/scenario_solver_train_cleaning_late.json"
+PlanPath: "/workspace/robust-rail-general/Location_SimpleService/plans/plan_train_cleaning_late.json"
 DebugLevel: 0
 
 TabuSearch:

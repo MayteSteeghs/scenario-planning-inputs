@@ -10,8 +10,8 @@ branch and deleted when 2.0.0 ships.
 | `robust-rail-generator` | `main` | `release/2.0.0` |
 | `robust-rail-solver` | `main` | `release/2.0.0` |
 | `robust-rail-evaluator` | `main` | `release/2.0.0` |
-| `scenario-planning-inputs` (this repo) | `main` | `release/2.0.0` |
-| `planning-approach` | `main` | `release/2.0.0` |
+| `robust-rail-general` (this repo) | `main` | `release/2.0.0` |
+| `robust-rail-planner` | `main` | `release/2.0.0` |
 
 Solver is the one repo with two stable-ish branches, `dev` and `main`, and the
 one place that needed a deliberate call rather than following the table:
@@ -37,7 +37,7 @@ The shared name is also load-bearing for CI: `validate-fixtures.yml` reads the
 generator's schemas from *the branch of the same name*, which only works because
 the name is the same everywhere.
 
-## scenario-planning-inputs branch policy
+## robust-rail-general branch policy
 
 `main` is kept stable for coordination with the separate planner team. It contains
 only design decisions (docs, config fixes) that do not break the existing pipeline.

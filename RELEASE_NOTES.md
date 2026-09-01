@@ -60,8 +60,8 @@ forbids extra fields, every fixture still carrying either key (all
 stripped. Separately, generated scenario JSON now ends with a trailing
 newline; 60 checked-in fixture files that the pipeline doesn't regenerate got
 the same newline appended by hand for consistency. Full verification
-evidence for both is in `docs/roadmap-2.0.0.md`'s
-[Release evidence](docs/roadmap-2.0.0.md#release-evidence) section.
+evidence for both is in `docs/roadmap-2.0.0-history.md`'s
+[Release evidence](docs/roadmap-2.0.0-history.md#release-evidence) section.
 
 ### Pipeline scripts
 

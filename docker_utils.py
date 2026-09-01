@@ -7,6 +7,19 @@ import sys
 from pathlib import Path
 
 
+def pull_flag(image: str) -> list[str]:
+    """--pull always for registry images, so a floating tag (hip:latest,
+    hip:edge, ...) is never silently served from a stale local cache — Docker's
+    own default (--pull missing) only pulls when the tag is absent locally, it
+    does not special-case :latest or re-check a tag it already has.
+
+    Omitted for bare local-build tags (no "/", e.g. "hip:latest" built by
+    docker-push.sh locally rather than pulled from ghcr.io): there is no
+    registry to check, and --pull always would just fail trying to find one.
+    """
+    return ["--pull", "always"] if "/" in image else []
+
+
 def ensure_docker_running() -> None:
     """Exit with a clear message if docker isn't installed or the daemon isn't reachable.
 

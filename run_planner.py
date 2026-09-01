@@ -9,7 +9,7 @@ consumes, and the same filename run_solver.py writes. Running both against one
 location would have them overwrite each other, so run_pipeline.py refuses the
 combination.
 
-The image is built and published from ../planning-approach by its
+The image is built and published from ../robust-rail-planner by its
 docker-push.sh.
 """
 
@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from docker_utils import ensure_docker_running, run_with_timeout
+from docker_utils import ensure_docker_running, run_with_timeout, pull_flag
 
 ROOT = Path(__file__).parent
 CONTAINER_DB = "/app/database"
@@ -38,11 +38,14 @@ CONTAINER_DB = "/app/database"
 # - "legacy" has no honest value. The planner step did not exist in 1.x, so
 #   there is no 1.x planner image to compare against. It maps to the current
 #   one rather than to a tag that was never built.
-# - "2.0.0-assert" likewise: the assertions builds are the evaluator's and the
-#   solver's. This image has no such variant, so the selector resolves to the
-#   plain image and the run stays comparable.
+# - "stable-assert" likewise: the assertions builds are the evaluator's and
+#   the solver's. This image has no such variant, so the selector resolves to
+#   the plain image and the run stays comparable.
+# - "edge" likewise: only the solver has an edge channel. This image has no
+#   such variant, so the selector resolves to the plain image and the run
+#   stays comparable. See run_solver.py.
 #
-# The version is planning-approach's own (see its VERSION file), deliberately
+# The version is robust-rail-planner's own (see its VERSION file), deliberately
 # not 2.0.0 — that number belongs to the repos sharing an interchange format.
 # 0.2.1 is the first image that plans every location. Neither predecessor is
 # worth pinning back to for a comparison run:
@@ -54,9 +57,10 @@ CONTAINER_DB = "/app/database"
 #          departing train never moved — fine on SimpleService, dead on
 #          KleineBinckhorst.
 DOCKER_IMAGE_VERSIONS = {
-    "legacy": "ghcr.io/robust-rail-nl/planner:0.3.0",
-    "2.0.0": "ghcr.io/robust-rail-nl/planner:0.3.0",
-    "2.0.0-assert": "ghcr.io/robust-rail-nl/planner:0.3.0",
+    "legacy": "ghcr.io/robust-rail-nl/planner:0.4.0",
+    "stable": "ghcr.io/robust-rail-nl/planner:0.4.0",
+    "stable-assert": "ghcr.io/robust-rail-nl/planner:0.4.0",
+    "edge": "ghcr.io/robust-rail-nl/planner:0.4.0",
     "local": "planner:latest",
 }
 
@@ -71,6 +75,7 @@ def _run_scenario(docker_image: str, location_dir: Path, scenario: Path, planner
 
     cmd = [
         "docker", "run", "--rm",
+        *pull_flag(docker_image),
         *(["--user", f"{os.getuid()}:{os.getgid()}"] if sys.platform != "win32" else []),
         "--mount", f"type=bind,source={location_dir.resolve()},target={CONTAINER_DB}",
         docker_image,
