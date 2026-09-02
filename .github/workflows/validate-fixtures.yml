@@ -17,43 +17,26 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
-    # The schemas live in the generator. Reading them from a checkout couples
-    # the two repos; a copy vendored into this repo would instead go stale in
-    # silence. Neither is the end state — publishing them as a release artifact
-    # is (roadmap Phase 2) — but of the two, a coupling that is visible beats
-    # staleness that is not.
-    #
-    # The branch is not pinned, because a field-name change lands in the
-    # generator and here on the same branch, and validating the new fixtures
-    # against the base branch's schema measures the wrong thing entirely — it
-    # once reported 2/18 for a tree that was really at 10/18. Taking the branch
-    # of the same name works because every repo in this release uses one shared
-    # branch name; it is why they were renamed to release/2.0.0.
-    - name: Check out the generator
-      run: |
-        repo=https://github.com/Robust-Rail-NL/robust-rail-generator
-        ref="${{ github.head_ref || github.ref_name }}"
-        if ! git ls-remote --exit-code --heads "$repo" "$ref" >/dev/null 2>&1; then
-          echo "No generator branch '$ref'; falling back to release/2.0.0."
-          ref=release/2.0.0
-        fi
-        echo "Validating against generator@$ref"
-        git clone --quiet --depth 1 --branch "$ref" "$repo" generator
-
     - name: Set up uv
       uses: astral-sh/setup-uv@v6
       with:
         enable-cache: true
 
-    # Gating, unlike the validation below. A stale schema turns every check
-    # downstream into a check of the wrong thing, and it passes while doing so.
-    - name: Check the generator's schemas are not stale
-      working-directory: generator
+    - name: Install dependencies
+      run: uv sync --frozen
+
+    # The interchange models (and scripts/export_schema.py) live in this repo
+    # now (robust-rail-generator#14) — the schema is direct build output, not
+    # a copy of anything, so there's nothing left to clone or go stale
+    # against a branch-name guess the way this used to work.
+    #
+    # Still gating: a stale schema/ turns every check below into a check of
+    # the wrong contract, and it would pass while doing so.
+    - name: Check the exported schemas are not stale
       run: |
-        uv sync --frozen
         uv run --frozen python scripts/export_schema.py
         git diff --exit-code schema/ \
-          || { echo "::error::the generator's schema/ is stale — re-export and commit it there before trusting this run"; exit 1; }
+          || { echo "::error::schema/ is stale — re-export and commit it before trusting this run"; exit 1; }
 
     # Gating since 2026-08-08, when the last of the drift was cleared and every
     # fixture validated. It ran report-only before that, at 2 of 18, on the
@@ -66,4 +49,4 @@ jobs:
     # configurations carry their "intent" blocks.
     - name: Validate the fixtures
       run: |
-        uv run --with jsonschema python validate_json.py --schema-dir generator/schema
+        uv run --with jsonschema python validate_json.py --schema-dir schema

@@ -1,0 +1,215 @@
+{
+  "$defs": {
+    "Action": {
+      "additionalProperties": false,
+      "description": "A single action in a shunting plan.\n\nFor Move actions, location is the destination TrackPart ID and resources\ncontains the path. For other actions, location is where the action occurs.\n\nThe units an action involves are the ShuntingUnit's members, all of them.\nThere was a trainUnitIds field for naming a subset; it was never written by\nthe solver, never read by the evaluator on the HIP path, and null in all 606\nactions of every fixture, so it was removed rather than carried further. Note\nfor anyone reintroducing per-action subsets: the evaluator reads this format\nthrough protobuf, and protobuf repeated fields have no presence tracking, so\non that path \"absent\" and \"empty\" arrive identically and cannot mean\ndifferent things without a deliberate design for it.\n\nThat constraint is the evaluator's alone, and is worth not overgeneralising \u2014\nit was read as applying to every consumer once, which is wrong in a way that\nmatters: the solver moved off protobuf to System.Text.Json and does\ndistinguish the two, which is why it can enforce `required` on read (see its\nNoProto/Location.cs). Any \"absent vs empty\" reasoning has to be settled per\nconsumer.\n\nTODO: ShuntingUnit is currently embedded in full. Consider switching to\nan ID reference once the evaluator has access to a ShuntingUnit registry\nderived from the Scenario input.",
+      "properties": {
+        "startTime": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starttime"
+        },
+        "endTime": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endtime"
+        },
+        "taskType": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "shuntingUnit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShuntingUnit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location"
+        },
+        "resources": {
+          "items": {
+            "$ref": "#/$defs/Resource"
+          },
+          "title": "Resources",
+          "type": "array"
+        }
+      },
+      "title": "Action",
+      "type": "object"
+    },
+    "PredefinedTaskType": {
+      "enum": [
+        "Move",
+        "Split",
+        "Combine",
+        "Wait",
+        "Arrive",
+        "Exit",
+        "StandIn",
+        "StandOut",
+        "Walking",
+        "Break",
+        "NonService"
+      ],
+      "title": "PredefinedTaskType",
+      "type": "string"
+    },
+    "Resource": {
+      "additionalProperties": false,
+      "description": "A resource involved in an action: either a TrackPart, a Facility,\nor a member of staff, identified by an explicit kind discriminator.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ResourceKind"
+        },
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "title": "Resource",
+      "type": "object"
+    },
+    "ResourceKind": {
+      "enum": [
+        "trackPart",
+        "facility",
+        "staff"
+      ],
+      "title": "ResourceKind",
+      "type": "string"
+    },
+    "ShuntingUnit": {
+      "additionalProperties": false,
+      "description": "A combination of TrainUnits that moves as a single unit at some point\nin time.\n\nmemberIDs is a list of TrainUnit IDs, not embedded objects; consumers that\nneed the full TrainUnit look it up via the scenario. Every array of IDs in\nthis schema carries the \"IDs\" suffix, so that a field holding references is\ndistinguishable by name from one holding objects \u2014 IncomingTrain.members\ngenuinely embeds its units.\n\nNote: standingType has been dropped from the unified schema. StandIn and\nStandOut task types in Plan actions carry this information explicitly.",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "memberIDs": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Memberids",
+          "type": "array"
+        },
+        "parentIDs": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Parentids",
+          "type": "array"
+        },
+        "childIDs": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Childids",
+          "type": "array"
+        }
+      },
+      "title": "ShuntingUnit",
+      "type": "object"
+    },
+    "TaskType": {
+      "additionalProperties": false,
+      "description": "A task type, either one of the well-known predefined values or a\ncustom string for facility-specific tasks.",
+      "properties": {
+        "predefined": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PredefinedTaskType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Other"
+        }
+      },
+      "title": "TaskType",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The output of a shunting algorithm: an ordered list of actions.\n\nThere was a trackParts field here, carrying a copy of the Location's track\ngraph because the evaluator supposedly could not reach the original. That\ncondition no longer holds \u2014 run_evaluator.py passes --path_location\nalongside --path_plan \u2014 and in practice nothing ever wrote or read it.",
+  "properties": {
+    "schemaVersion": {
+      "default": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "actions": {
+      "items": {
+        "$ref": "#/$defs/Action"
+      },
+      "title": "Actions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "actions"
+  ],
+  "title": "Plan",
+  "type": "object"
+}

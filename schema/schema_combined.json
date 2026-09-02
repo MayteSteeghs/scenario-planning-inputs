@@ -1,0 +1,1243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Robust Rail Interchange Schema",
+  "description": "JSON Schema for interchange between robust-rail-generator, robust-rail-solver, and robust-rail-evaluator. Generated from Pydantic models in robust-rail-general. Do not edit by hand.",
+  "$defs": {
+    "Action": {
+      "additionalProperties": false,
+      "description": "A single action in a shunting plan.\n\nFor Move actions, location is the destination TrackPart ID and resources\ncontains the path. For other actions, location is where the action occurs.\n\nThe units an action involves are the ShuntingUnit's members, all of them.\nThere was a trainUnitIds field for naming a subset; it was never written by\nthe solver, never read by the evaluator on the HIP path, and null in all 606\nactions of every fixture, so it was removed rather than carried further. Note\nfor anyone reintroducing per-action subsets: the evaluator reads this format\nthrough protobuf, and protobuf repeated fields have no presence tracking, so\non that path \"absent\" and \"empty\" arrive identically and cannot mean\ndifferent things without a deliberate design for it.\n\nThat constraint is the evaluator's alone, and is worth not overgeneralising \u2014\nit was read as applying to every consumer once, which is wrong in a way that\nmatters: the solver moved off protobuf to System.Text.Json and does\ndistinguish the two, which is why it can enforce `required` on read (see its\nNoProto/Location.cs). Any \"absent vs empty\" reasoning has to be settled per\nconsumer.\n\nTODO: ShuntingUnit is currently embedded in full. Consider switching to\nan ID reference once the evaluator has access to a ShuntingUnit registry\nderived from the Scenario input.",
+      "properties": {
+        "startTime": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starttime"
+        },
+        "endTime": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endtime"
+        },
+        "taskType": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "shuntingUnit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShuntingUnit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location"
+        },
+        "resources": {
+          "items": {
+            "$ref": "#/$defs/Resource"
+          },
+          "title": "Resources",
+          "type": "array"
+        }
+      },
+      "title": "Action",
+      "type": "object"
+    },
+    "DisabledTrackPart": {
+      "additionalProperties": false,
+      "description": "A track part that is unavailable during a time window.",
+      "properties": {
+        "trackPart": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trackpart"
+        },
+        "arrival": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arrival"
+        },
+        "departure": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Departure"
+        }
+      },
+      "title": "DisabledTrackPart",
+      "type": "object"
+    },
+    "Facility": {
+      "additionalProperties": false,
+      "description": "An object at the location that is not part of the rails (e.g. a\ncleaning platform or a washing installation).",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        },
+        "relatedTrackPartIDs": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Relatedtrackpartids",
+          "type": "array"
+        },
+        "taskTypes": {
+          "items": {
+            "$ref": "#/$defs/TaskType"
+          },
+          "title": "Tasktypes",
+          "type": "array"
+        },
+        "simultaneousUsageCount": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Simultaneoususagecount"
+        },
+        "timeWindow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInterval"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Facility",
+      "type": "object"
+    },
+    "IncomingTrain": {
+      "additionalProperties": false,
+      "description": "A train arriving at or already present in the shunting yard.\n\nUsed for both in (arriving) and inStanding (already present) trains.",
+      "properties": {
+        "entryTrackPart": {
+          "title": "Entrytrackpart",
+          "type": "integer"
+        },
+        "firstParkingTrackPart": {
+          "title": "Firstparkingtrackpart",
+          "type": "integer"
+        },
+        "arrival": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arrival"
+        },
+        "departure": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Departure"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "members": {
+          "items": {
+            "$ref": "#/$defs/IncomingTrainUnit"
+          },
+          "title": "Members",
+          "type": "array"
+        },
+        "standingIndex": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Standingindex"
+        }
+      },
+      "required": [
+        "entryTrackPart",
+        "firstParkingTrackPart"
+      ],
+      "title": "IncomingTrain",
+      "type": "object"
+    },
+    "IncomingTrainUnit": {
+      "additionalProperties": false,
+      "description": "A TrainUnit as part of an incoming train, with an id and associated tasks.",
+      "properties": {
+        "typePrefix": {
+          "title": "Typeprefix",
+          "type": "string"
+        },
+        "carriages": {
+          "title": "Carriages",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/$defs/TaskSpec"
+          },
+          "title": "Tasks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "typePrefix",
+        "carriages",
+        "id"
+      ],
+      "title": "IncomingTrainUnit",
+      "type": "object"
+    },
+    "Location": {
+      "additionalProperties": false,
+      "description": "The fixed part of the problem specification: track layout and\nfacilities. Does not change on a daily basis.",
+      "properties": {
+        "schemaVersion": {
+          "default": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "trackParts": {
+          "items": {
+            "$ref": "#/$defs/TrackPart"
+          },
+          "title": "Trackparts",
+          "type": "array"
+        },
+        "facilities": {
+          "items": {
+            "$ref": "#/$defs/Facility"
+          },
+          "title": "Facilities",
+          "type": "array"
+        },
+        "taskTypes": {
+          "items": {
+            "$ref": "#/$defs/TaskType"
+          },
+          "title": "Tasktypes",
+          "type": "array"
+        },
+        "movementConstant": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movementconstant"
+        },
+        "movementTrackCoefficient": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movementtrackcoefficient"
+        },
+        "movementSwitchCoefficient": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movementswitchcoefficient"
+        },
+        "distanceEntries": {
+          "items": {
+            "$ref": "#/$defs/WalkingDistanceEntry"
+          },
+          "title": "Distanceentries",
+          "type": "array"
+        }
+      },
+      "required": [
+        "trackParts"
+      ],
+      "title": "Location",
+      "type": "object"
+    },
+    "MemberOfStaff": {
+      "additionalProperties": false,
+      "description": "A human able to perform tasks at the facility.\n\nOptional at the Scenario level; omitted for consumers (e.g. the solver)\nthat do not model staff.",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "shifts": {
+          "items": {
+            "$ref": "#/$defs/TimeInterval"
+          },
+          "title": "Shifts",
+          "type": "array"
+        },
+        "breakWindows": {
+          "items": {
+            "$ref": "#/$defs/TimeInterval"
+          },
+          "title": "Breakwindows",
+          "type": "array"
+        },
+        "breakDuration": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Breakduration"
+        },
+        "startLocationId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Startlocationid"
+        },
+        "endLocationId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endlocationid"
+        },
+        "breakLocationId": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Breaklocationid"
+        },
+        "canMoveTrains": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Canmovetrains"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        }
+      },
+      "title": "MemberOfStaff",
+      "type": "object"
+    },
+    "NonServiceTraffic": {
+      "additionalProperties": false,
+      "description": "Non-service traffic that reserves part of the infrastructure.",
+      "properties": {
+        "memberIDs": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Memberids",
+          "type": "array"
+        },
+        "arrival": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arrival"
+        },
+        "departure": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Departure"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        }
+      },
+      "title": "NonServiceTraffic",
+      "type": "object"
+    },
+    "Plan": {
+      "additionalProperties": false,
+      "description": "The output of a shunting algorithm: an ordered list of actions.\n\nThere was a trackParts field here, carrying a copy of the Location's track\ngraph because the evaluator supposedly could not reach the original. That\ncondition no longer holds \u2014 run_evaluator.py passes --path_location\nalongside --path_plan \u2014 and in practice nothing ever wrote or read it.",
+      "properties": {
+        "schemaVersion": {
+          "default": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/Action"
+          },
+          "title": "Actions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "actions"
+      ],
+      "title": "Plan",
+      "type": "object"
+    },
+    "PredefinedTaskType": {
+      "enum": [
+        "Move",
+        "Split",
+        "Combine",
+        "Wait",
+        "Arrive",
+        "Exit",
+        "StandIn",
+        "StandOut",
+        "Walking",
+        "Break",
+        "NonService"
+      ],
+      "title": "PredefinedTaskType",
+      "type": "string"
+    },
+    "Resource": {
+      "additionalProperties": false,
+      "description": "A resource involved in an action: either a TrackPart, a Facility,\nor a member of staff, identified by an explicit kind discriminator.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ResourceKind"
+        },
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "title": "Resource",
+      "type": "object"
+    },
+    "ResourceKind": {
+      "enum": [
+        "trackPart",
+        "facility",
+        "staff"
+      ],
+      "title": "ResourceKind",
+      "type": "string"
+    },
+    "Scenario": {
+      "additionalProperties": false,
+      "description": "The daily-varying part of the problem specification: which trains\narrive, depart, or remain in the shunting yard.\n\nTODO: decide whether train_unit_types belongs here (normalized, referenced\nby name from TrainUnit) or embedded in each TrainUnit. Current decision:\nhere.",
+      "properties": {
+        "schemaVersion": {
+          "default": 1,
+          "title": "Schemaversion",
+          "type": "integer"
+        },
+        "trainUnitTypes": {
+          "items": {
+            "$ref": "#/$defs/TrainUnitType"
+          },
+          "title": "Trainunittypes",
+          "type": "array"
+        },
+        "in": {
+          "items": {
+            "$ref": "#/$defs/IncomingTrain"
+          },
+          "title": "In",
+          "type": "array"
+        },
+        "inStanding": {
+          "items": {
+            "$ref": "#/$defs/IncomingTrain"
+          },
+          "title": "Instanding",
+          "type": "array"
+        },
+        "out": {
+          "items": {
+            "$ref": "#/$defs/TrainRequest"
+          },
+          "title": "Out",
+          "type": "array"
+        },
+        "outStanding": {
+          "items": {
+            "$ref": "#/$defs/TrainRequest"
+          },
+          "title": "Outstanding",
+          "type": "array"
+        },
+        "startTime": {
+          "title": "Starttime",
+          "type": "integer"
+        },
+        "endTime": {
+          "title": "Endtime",
+          "type": "integer"
+        },
+        "nonServiceTraffic": {
+          "items": {
+            "$ref": "#/$defs/NonServiceTraffic"
+          },
+          "title": "Nonservicetraffic",
+          "type": "array"
+        },
+        "disabledTrackPart": {
+          "items": {
+            "$ref": "#/$defs/DisabledTrackPart"
+          },
+          "title": "Disabledtrackpart",
+          "type": "array"
+        },
+        "workers": {
+          "items": {
+            "$ref": "#/$defs/MemberOfStaff"
+          },
+          "title": "Workers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "trainUnitTypes",
+        "startTime",
+        "endTime"
+      ],
+      "title": "Scenario",
+      "type": "object"
+    },
+    "ShuntingUnit": {
+      "additionalProperties": false,
+      "description": "A combination of TrainUnits that moves as a single unit at some point\nin time.\n\nmemberIDs is a list of TrainUnit IDs, not embedded objects; consumers that\nneed the full TrainUnit look it up via the scenario. Every array of IDs in\nthis schema carries the \"IDs\" suffix, so that a field holding references is\ndistinguishable by name from one holding objects \u2014 IncomingTrain.members\ngenuinely embeds its units.\n\nNote: standingType has been dropped from the unified schema. StandIn and\nStandOut task types in Plan actions carry this information explicitly.",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "memberIDs": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Memberids",
+          "type": "array"
+        },
+        "parentIDs": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Parentids",
+          "type": "array"
+        },
+        "childIDs": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Childids",
+          "type": "array"
+        }
+      },
+      "title": "ShuntingUnit",
+      "type": "object"
+    },
+    "TaskSpec": {
+      "additionalProperties": false,
+      "description": "A task to be performed on a train unit.\n\nNote: priority has been dropped from the unified schema and replaced by\noptional. TORS used priority only as a binary 0/non-zero flag; HIP had\nit marked deprecated and unread.",
+      "properties": {
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TaskType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration"
+        },
+        "requiredSkills": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Requiredskills",
+          "type": "array"
+        },
+        "optional": {
+          "default": false,
+          "title": "Optional",
+          "type": "boolean"
+        }
+      },
+      "title": "TaskSpec",
+      "type": "object"
+    },
+    "TaskType": {
+      "additionalProperties": false,
+      "description": "A task type, either one of the well-known predefined values or a\ncustom string for facility-specific tasks.",
+      "properties": {
+        "predefined": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PredefinedTaskType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Other"
+        }
+      },
+      "title": "TaskType",
+      "type": "object"
+    },
+    "TimeInterval": {
+      "additionalProperties": false,
+      "description": "A single time interval, with times in seconds since the epoch.",
+      "properties": {
+        "start": {
+          "title": "Start",
+          "type": "number"
+        },
+        "end": {
+          "title": "End",
+          "type": "number"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "TimeInterval",
+      "type": "object"
+    },
+    "TrackPart": {
+      "additionalProperties": false,
+      "description": "A single node in the rail graph.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrackPartType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "aSide": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Aside",
+          "type": "array"
+        },
+        "bSide": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Bside",
+          "type": "array"
+        },
+        "length": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Length"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "sawMovementAllowed": {
+          "default": false,
+          "title": "Sawmovementallowed",
+          "type": "boolean"
+        },
+        "parkingAllowed": {
+          "default": false,
+          "title": "Parkingallowed",
+          "type": "boolean"
+        },
+        "isElectrified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Iselectrified"
+        },
+        "stationPlatform": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stationplatform"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "TrackPart",
+      "type": "object"
+    },
+    "TrackPartType": {
+      "enum": [
+        "RailRoad",
+        "Switch",
+        "EnglishSwitch",
+        "HalfEnglishSwitch",
+        "Intersection",
+        "Bumper",
+        "Building"
+      ],
+      "title": "TrackPartType",
+      "type": "string"
+    },
+    "TrainRequest": {
+      "additionalProperties": false,
+      "description": "A request for a train to depart from or remain in the shunting yard.\n\nUsed for both out (departing) and outStanding (remaining) trains.",
+      "properties": {
+        "leaveTrackPart": {
+          "title": "Leavetrackpart",
+          "type": "integer"
+        },
+        "lastParkingTrackPart": {
+          "title": "Lastparkingtrackpart",
+          "type": "integer"
+        },
+        "arrival": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arrival"
+        },
+        "departure": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Departure"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "trainUnits": {
+          "items": {
+            "$ref": "#/$defs/TrainUnit"
+          },
+          "title": "Trainunits",
+          "type": "array"
+        },
+        "standingIndex": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Standingindex"
+        }
+      },
+      "required": [
+        "leaveTrackPart",
+        "lastParkingTrackPart"
+      ],
+      "title": "TrainRequest",
+      "type": "object"
+    },
+    "TrainUnit": {
+      "additionalProperties": false,
+      "description": "A combination of carriages that can move independently.\n\n(type_prefix, carriages) is the lookup key into an entry in\nScenario.train_unit_types. Embedding the full TrainUnitType is\nintentionally avoided to prevent redundancy and inconsistency.",
+      "properties": {
+        "typePrefix": {
+          "title": "Typeprefix",
+          "type": "string"
+        },
+        "carriages": {
+          "title": "Carriages",
+          "type": "integer"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "tasks": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/TaskSpec"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tasks"
+        }
+      },
+      "required": [
+        "typePrefix",
+        "carriages"
+      ],
+      "title": "TrainUnit",
+      "type": "object"
+    },
+    "TrainUnitType": {
+      "additionalProperties": false,
+      "description": "A type of train unit, e.g. SLT or SGM.\n\nIdentity is (type_prefix, carriages): two TrainUnitType instances with\nthe same type prefix and carriage count are considered the same type.\n\nNote: type_prefix is the type family name only (\"SLT\", \"SGM\", \"VIRM\")\nand does NOT encode carriage count. The old convention of \"SLT4\" / \"SLT6\"\nis replaced by type_prefix=\"SLT\" + carriages=4. type_display_name is a\nderived value (type_prefix + \"-\" + carriages) for display/logging only;\nit is not part of the wire schema.",
+      "properties": {
+        "typePrefix": {
+          "title": "Typeprefix",
+          "type": "string"
+        },
+        "carriages": {
+          "title": "Carriages",
+          "type": "integer"
+        },
+        "length": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Length"
+        },
+        "combineDuration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Combineduration"
+        },
+        "splitDuration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Splitduration"
+        },
+        "backNormTime": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backnormtime"
+        },
+        "backAdditionTime": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backadditiontime"
+        },
+        "travelSpeed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Travelspeed"
+        },
+        "startUpTime": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Startuptime"
+        },
+        "needsLoco": {
+          "default": false,
+          "title": "Needsloco",
+          "type": "boolean"
+        },
+        "isLoco": {
+          "default": false,
+          "title": "Isloco",
+          "type": "boolean"
+        },
+        "needsElectricity": {
+          "default": false,
+          "title": "Needselectricity",
+          "type": "boolean"
+        },
+        "idPrefix": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idprefix"
+        }
+      },
+      "required": [
+        "typePrefix",
+        "carriages"
+      ],
+      "title": "TrainUnitType",
+      "type": "object"
+    },
+    "WalkingDistanceEntry": {
+      "additionalProperties": false,
+      "description": "An entry in the walking distance matrix between track parts.",
+      "properties": {
+        "fromTrackPartId": {
+          "title": "Fromtrackpartid",
+          "type": "integer"
+        },
+        "toTrackPartId": {
+          "title": "Totrackpartid",
+          "type": "integer"
+        },
+        "distanceInSeconds": {
+          "title": "Distanceinseconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "fromTrackPartId",
+        "toTrackPartId",
+        "distanceInSeconds"
+      ],
+      "title": "WalkingDistanceEntry",
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Location"
+    },
+    {
+      "$ref": "#/$defs/Scenario"
+    },
+    {
+      "$ref": "#/$defs/Plan"
+    }
+  ]
+}

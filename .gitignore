@@ -1,4 +1,6 @@
 .idea/
+.venv/
+__pycache__/
 Location_*/scenarios/*.out
 Location_*/scenarios/*.err
 Location_*/plans/*.out

@@ -1,0 +1,524 @@
+{
+  "$defs": {
+    "CustomTrainsConfig": {
+      "additionalProperties": false,
+      "description": "trains_given=true: the trains are spelled out rather than drawn.\n\nThe custom_* payloads are typed only as objects for now. The value of this\nschema is at the top level, where the optional knobs live and where a typo\ngoes unnoticed; the nested shapes are involved enough to deserve their own\npass rather than a guess.",
+      "properties": {
+        "location": {
+          "title": "Location",
+          "type": "string"
+        },
+        "start_time": {
+          "title": "Start Time",
+          "type": "integer"
+        },
+        "end_time": {
+          "title": "End Time",
+          "type": "integer"
+        },
+        "perform_servicing": {
+          "title": "Perform Servicing",
+          "type": "boolean"
+        },
+        "intent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Intent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "use_default_material": {
+          "title": "Use Default Material",
+          "type": "boolean"
+        },
+        "number_of_train_unit_types": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Number Of Train Unit Types"
+        },
+        "custom_train_unit_types": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Custom Train Unit Types"
+        },
+        "track_ids_used": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Ids Used"
+        },
+        "trains_given": {
+          "const": true,
+          "title": "Trains Given",
+          "type": "boolean"
+        },
+        "custom_trains": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Custom Trains",
+          "type": "array"
+        },
+        "custom_train_units": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Custom Train Units",
+          "type": "array"
+        },
+        "custom_servicing_tasks": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Custom Servicing Tasks",
+          "type": "array"
+        },
+        "partial_matching_given": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Partial Matching Given"
+        },
+        "partial_plan_given": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Partial Plan Given"
+        },
+        "through_traffic_given": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Through Traffic Given"
+        }
+      },
+      "required": [
+        "location",
+        "start_time",
+        "end_time",
+        "perform_servicing",
+        "use_default_material",
+        "trains_given"
+      ],
+      "title": "CustomTrainsConfig",
+      "type": "object"
+    },
+    "Gateway": {
+      "additionalProperties": false,
+      "description": "The track parts trains may arrive over and depart from, by name.",
+      "properties": {
+        "arrival": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Arrival",
+          "type": "array"
+        },
+        "departure": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Departure",
+          "type": "array"
+        }
+      },
+      "title": "Gateway",
+      "type": "object"
+    },
+    "GeneratedTrainsConfig": {
+      "additionalProperties": false,
+      "description": "trains_given=false: the trains are drawn from a distribution.",
+      "properties": {
+        "location": {
+          "title": "Location",
+          "type": "string"
+        },
+        "start_time": {
+          "title": "Start Time",
+          "type": "integer"
+        },
+        "end_time": {
+          "title": "End Time",
+          "type": "integer"
+        },
+        "perform_servicing": {
+          "title": "Perform Servicing",
+          "type": "boolean"
+        },
+        "intent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Intent"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "use_default_material": {
+          "title": "Use Default Material",
+          "type": "boolean"
+        },
+        "number_of_train_unit_types": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Number Of Train Unit Types"
+        },
+        "custom_train_unit_types": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Custom Train Unit Types"
+        },
+        "track_ids_used": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Ids Used"
+        },
+        "trains_given": {
+          "const": false,
+          "title": "Trains Given",
+          "type": "boolean"
+        },
+        "number_of_trains": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Number Of Trains"
+        },
+        "train_unit_distribution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrainUnitDistribution"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "gateway": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Gateway"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "matching": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matching"
+        },
+        "min_gap_on_gateway": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Gap On Gateway"
+        },
+        "min_time_in_yard": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Time In Yard"
+        },
+        "mixed_traffic": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mixed Traffic"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        }
+      },
+      "required": [
+        "location",
+        "start_time",
+        "end_time",
+        "perform_servicing",
+        "use_default_material",
+        "trains_given"
+      ],
+      "title": "GeneratedTrainsConfig",
+      "type": "object"
+    },
+    "Intent": {
+      "additionalProperties": false,
+      "description": "Why a configuration exists and what it is meant to exercise.\n\nFree prose, but structured prose: recorded so that a scenario's purpose\nsurvives the person who wrote it. Carried through to nothing \u2014 the\ngenerator ignores it \u2014 which is exactly why it needs to be declared here.\nLeft undeclared, it would have to be admitted by permitting unknown keys,\nand that same permission is what lets a typo through unnoticed.",
+      "properties": {
+        "designed_for": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Designed For"
+        },
+        "expectation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expectation"
+        },
+        "exercises": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exercises"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "title": "Intent",
+      "type": "object"
+    },
+    "TrainUnitDistribution": {
+      "additionalProperties": false,
+      "description": "How randomly generated material is drawn.\n\nNote the spelling: instanding_ratio and outstanding_ratio, both lowercase.\nscenario_config_test.json carried inStanding_ratio/outStanding_ratio, which\nrandom_generator.py never reads, so those settings had no effect. They were\nboth 0.0 and the no-key fallback is also \"none\", so nothing observable\nchanged \u2014 which is how it survived. This model rejects that spelling.\n\nservicing_ratio and tasks_per_train_unit are optional inputs with defaults\napplied by check_config.py. number_trains_in, number_trains_out and\naverage_servicing_time are deliberately absent: they are derived, and\nsetting them by hand would be a mistake worth reporting.",
+      "properties": {
+        "train_unit_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Train Unit Types",
+          "type": "array"
+        },
+        "units_per_composition": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Units Per Composition",
+          "type": "array"
+        },
+        "super_type_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Super Type Ratio"
+        },
+        "matching_complexity": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matching Complexity"
+        },
+        "instanding_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instanding Ratio"
+        },
+        "outstanding_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outstanding Ratio"
+        },
+        "servicing_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Servicing Ratio"
+        },
+        "tasks_per_train_unit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tasks Per Train Unit"
+        }
+      },
+      "title": "TrainUnitDistribution",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "False": "#/$defs/GeneratedTrainsConfig",
+      "True": "#/$defs/CustomTrainsConfig"
+    },
+    "propertyName": "trains_given"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/CustomTrainsConfig"
+    },
+    {
+      "$ref": "#/$defs/GeneratedTrainsConfig"
+    }
+  ]
+}

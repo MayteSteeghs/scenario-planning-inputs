@@ -1,0 +1,355 @@
+{
+  "$defs": {
+    "Facility": {
+      "additionalProperties": false,
+      "description": "An object at the location that is not part of the rails (e.g. a\ncleaning platform or a washing installation).",
+      "properties": {
+        "id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        },
+        "relatedTrackPartIDs": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Relatedtrackpartids",
+          "type": "array"
+        },
+        "taskTypes": {
+          "items": {
+            "$ref": "#/$defs/TaskType"
+          },
+          "title": "Tasktypes",
+          "type": "array"
+        },
+        "simultaneousUsageCount": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Simultaneoususagecount"
+        },
+        "timeWindow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TimeInterval"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Facility",
+      "type": "object"
+    },
+    "PredefinedTaskType": {
+      "enum": [
+        "Move",
+        "Split",
+        "Combine",
+        "Wait",
+        "Arrive",
+        "Exit",
+        "StandIn",
+        "StandOut",
+        "Walking",
+        "Break",
+        "NonService"
+      ],
+      "title": "PredefinedTaskType",
+      "type": "string"
+    },
+    "TaskType": {
+      "additionalProperties": false,
+      "description": "A task type, either one of the well-known predefined values or a\ncustom string for facility-specific tasks.",
+      "properties": {
+        "predefined": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PredefinedTaskType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "other": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Other"
+        }
+      },
+      "title": "TaskType",
+      "type": "object"
+    },
+    "TimeInterval": {
+      "additionalProperties": false,
+      "description": "A single time interval, with times in seconds since the epoch.",
+      "properties": {
+        "start": {
+          "title": "Start",
+          "type": "number"
+        },
+        "end": {
+          "title": "End",
+          "type": "number"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "TimeInterval",
+      "type": "object"
+    },
+    "TrackPart": {
+      "additionalProperties": false,
+      "description": "A single node in the rail graph.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrackPartType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "aSide": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Aside",
+          "type": "array"
+        },
+        "bSide": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Bside",
+          "type": "array"
+        },
+        "length": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Length"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "sawMovementAllowed": {
+          "default": false,
+          "title": "Sawmovementallowed",
+          "type": "boolean"
+        },
+        "parkingAllowed": {
+          "default": false,
+          "title": "Parkingallowed",
+          "type": "boolean"
+        },
+        "isElectrified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Iselectrified"
+        },
+        "stationPlatform": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stationplatform"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "TrackPart",
+      "type": "object"
+    },
+    "TrackPartType": {
+      "enum": [
+        "RailRoad",
+        "Switch",
+        "EnglishSwitch",
+        "HalfEnglishSwitch",
+        "Intersection",
+        "Bumper",
+        "Building"
+      ],
+      "title": "TrackPartType",
+      "type": "string"
+    },
+    "WalkingDistanceEntry": {
+      "additionalProperties": false,
+      "description": "An entry in the walking distance matrix between track parts.",
+      "properties": {
+        "fromTrackPartId": {
+          "title": "Fromtrackpartid",
+          "type": "integer"
+        },
+        "toTrackPartId": {
+          "title": "Totrackpartid",
+          "type": "integer"
+        },
+        "distanceInSeconds": {
+          "title": "Distanceinseconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "fromTrackPartId",
+        "toTrackPartId",
+        "distanceInSeconds"
+      ],
+      "title": "WalkingDistanceEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The fixed part of the problem specification: track layout and\nfacilities. Does not change on a daily basis.",
+  "properties": {
+    "schemaVersion": {
+      "default": 1,
+      "title": "Schemaversion",
+      "type": "integer"
+    },
+    "trackParts": {
+      "items": {
+        "$ref": "#/$defs/TrackPart"
+      },
+      "title": "Trackparts",
+      "type": "array"
+    },
+    "facilities": {
+      "items": {
+        "$ref": "#/$defs/Facility"
+      },
+      "title": "Facilities",
+      "type": "array"
+    },
+    "taskTypes": {
+      "items": {
+        "$ref": "#/$defs/TaskType"
+      },
+      "title": "Tasktypes",
+      "type": "array"
+    },
+    "movementConstant": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Movementconstant"
+    },
+    "movementTrackCoefficient": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Movementtrackcoefficient"
+    },
+    "movementSwitchCoefficient": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Movementswitchcoefficient"
+    },
+    "distanceEntries": {
+      "items": {
+        "$ref": "#/$defs/WalkingDistanceEntry"
+      },
+      "title": "Distanceentries",
+      "type": "array"
+    }
+  },
+  "required": [
+    "trackParts"
+  ],
+  "title": "Location",
+  "type": "object"
+}
