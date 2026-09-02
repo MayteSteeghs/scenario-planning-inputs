@@ -36,6 +36,18 @@ DOCKER_IMAGE_VERSIONS = {
 CONTAINER_DB = "/app/database"
 
 
+def _resolve_image(version: str) -> str:
+    """A known alias (legacy/stable/stable-assert/edge/local) resolves via
+    DOCKER_IMAGE_VERSIONS as before. Anything else is treated as a literal tag
+    on the registry image -- e.g. --version 2.0.0 pins
+    ghcr.io/robust-rail-nl/tors:2.0.0 directly, sidestepping "stable"'s
+    intentional float-forward behavior for a caller that wants a version
+    which will never move out from under it (see run_solver.py's own "stable"
+    for what floating forward incorrectly can look like in practice).
+    """
+    return DOCKER_IMAGE_VERSIONS.get(version, f"ghcr.io/robust-rail-nl/tors:{version}")
+
+
 def _scenario_name(plan: Path) -> str:
     return plan.stem.removeprefix("plan_")
 
@@ -211,10 +223,13 @@ def main() -> None:
                         help="Print docker commands without executing them.")
     parser.add_argument("--location", metavar="NAME",
                         help="Restrict to a single Location_* directory.")
-    parser.add_argument("--version", choices=DOCKER_IMAGE_VERSIONS.keys(), default='stable',
-                        help="Pick a docker image version ('legacy' no longer works against this "
-                             "repo's fixtures — Phase 1 moved run_*.py to the unified format "
-                             "unconditionally; 'local' is reserved for locally built images).")
+    parser.add_argument("--version", default='stable',
+                        help="Pick a docker image version: one of legacy/stable/stable-assert/"
+                             "edge/local ('legacy' no longer works against this repo's fixtures "
+                             "— Phase 1 moved run_*.py to the unified format unconditionally; "
+                             "'local' is reserved for locally built images), or any other value "
+                             "is used as a literal tag on ghcr.io/robust-rail-nl/tors -- e.g. "
+                             "2.0.0 pins that exact release instead of floating with 'stable'.")
     parser.add_argument("--plan", metavar="PATH", type=Path,
                         help="Evaluate a single plan file instead of every plans/plan_*.json "
                              "under the location (requires --location and --scenario). "
@@ -242,7 +257,7 @@ def main() -> None:
             sys.exit(f"No such scenario: {scenario}")
         if not (loc / "config.json").exists():
             sys.exit(f"{loc}/config.json missing — required by the evaluator alongside location.json")
-        record = _run_plan_single(DOCKER_IMAGE_VERSIONS[args.version], loc, args.plan, scenario,
+        record = _run_plan_single(_resolve_image(args.version), loc, args.plan, scenario,
                                    args.version, args.dry_run)
         if not args.dry_run and record.get("exit_code") != 0:
             sys.exit(1)
@@ -261,7 +276,7 @@ def main() -> None:
         print(f"\n{loc.name} ({len(plans)} plan(s))")
         for plan in plans:
             total += 1
-            if not _run_plan(DOCKER_IMAGE_VERSIONS[args.version], loc, plan, args.dry_run):
+            if not _run_plan(_resolve_image(args.version), loc, plan, args.dry_run):
                 errors += 1
 
     print(f"\nDone: {total - errors}/{total} succeeded.")

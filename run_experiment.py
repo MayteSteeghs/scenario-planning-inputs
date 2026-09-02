@@ -149,6 +149,16 @@ def _write_progress(out_dir: Path, scenarios: list, tools: list, all_results: di
             })
 
 
+def _version_for(tool: str, solver_version: str, planner_version: str) -> str:
+    """The planner has its own independent version line (see run_planner.py's
+    own DOCKER_IMAGE_VERSIONS comment) -- generator and solver share the
+    2.0.0-family version instead. Only for picking the solver-or-planner
+    image itself -- the evaluator always stays on solver_version regardless
+    of which tool produced the plan (see the comment at its call site).
+    """
+    return planner_version if tool == "planner" else solver_version
+
+
 def _run_tool(tool: str, location: str, scenario: Path, out_dir: Path,
               version: str, force: bool, dry_run: bool, max_duration, seed) -> dict:
     result_path = out_dir / "result.json"
@@ -191,17 +201,28 @@ def _run_evaluator(location: str, scenario: Path, plan_path: Path, version: str,
     }
 
 
-def _run_and_record(tool: str, location: str, scenario: Path, tool_dir: Path, version: str,
+def _run_and_record(tool: str, location: str, scenario: Path, tool_dir: Path,
+                     solver_version: str, planner_version: str, evaluator_version: str,
                      force: bool, dry_run: bool, max_duration, seed, results: dict, key: str) -> None:
+    version = _version_for(tool, solver_version, planner_version)
     run_result = _run_tool(tool, location, scenario, tool_dir, version, force, dry_run,
                             max_duration, seed)
     eval_result = None
     # A dry run never produces a real plan.json, so there is nothing for the
     # evaluator to dry-run against either — skip it rather than have it fail
-    # a "no such plan file" check that would be misleading here.
+    # a "no such plan file" check that would be misleading here. The evaluator
+    # has its own independent version, never the plan's own producer version:
+    # a planner plan is still scored by the same evaluator build a solver plan
+    # would be -- otherwise "local" here would mean the planner's own dev
+    # image tag, which the evaluator has no relation to. It also isn't tied to
+    # solver_version, even though both default into the same 2.0.0 family --
+    # that alias ("stable") is deliberately float-forward and has already bit
+    # the solver once (see run_solver.py's own "stable" comment), so the
+    # evaluator gets a separately pinnable version instead of inheriting
+    # whatever the solver happens to be on.
     if not dry_run and run_result.get("plan_produced"):
         eval_result = _run_evaluator(location, scenario, tool_dir / "plan.json",
-                                      version, force, dry_run)
+                                      evaluator_version, force, dry_run)
     results[key] = {"run": run_result, "eval": eval_result}
     solved = bool(eval_result and eval_result.get("solved"))
     instance = scenario.stem.removeprefix("scenario_")
@@ -210,7 +231,8 @@ def _run_and_record(tool: str, location: str, scenario: Path, tool_dir: Path, ve
 
 
 def _run_instance(location: str, scenario: Path, tools: list, out_dir: Path,
-                   version: str, force: bool, dry_run: bool, max_duration, seed, num_seeds,
+                   solver_version: str, planner_version: str, evaluator_version: str,
+                   force: bool, dry_run: bool, max_duration, seed, num_seeds,
                    all_results: dict, all_scenarios: list) -> None:
     instance = _instance_stem(scenario)
     results = all_results.setdefault(instance, {})
@@ -218,14 +240,16 @@ def _run_instance(location: str, scenario: Path, tools: list, out_dir: Path,
         if tool == "solver" and num_seeds:
             for s in range(1, num_seeds + 1):
                 tool_dir = out_dir / instance / FOLDER_NAMES[tool] / f"seed{s}"
-                _run_and_record(tool, location, scenario, tool_dir, version, force, dry_run,
-                                 max_duration, s, results, f"solver_seed{s}")
+                _run_and_record(tool, location, scenario, tool_dir,
+                                 solver_version, planner_version, evaluator_version,
+                                 force, dry_run, max_duration, s, results, f"solver_seed{s}")
                 if not dry_run:
                     _write_progress(out_dir, all_scenarios, tools, all_results, num_seeds)
         else:
             tool_dir = out_dir / instance / FOLDER_NAMES[tool]
-            _run_and_record(tool, location, scenario, tool_dir, version, force, dry_run,
-                             max_duration, seed, results, tool)
+            _run_and_record(tool, location, scenario, tool_dir,
+                             solver_version, planner_version, evaluator_version,
+                             force, dry_run, max_duration, seed, results, tool)
             if not dry_run:
                 _write_progress(out_dir, all_scenarios, tools, all_results, num_seeds)
 
@@ -241,16 +265,35 @@ def main() -> None:
                         help="Run a single scenario instead of every scenario_*.json under "
                              "the location.")
     parser.add_argument("--tools", metavar="solver,planner", default="solver,planner",
-                        help="Comma-separated subset of {solver,planner} to run (default: "
-                             "both). planner is currently disabled, see below -- the default "
-                             "will fail until it's fixed or you pass --tools solver.")
+                        help="Comma-separated subset of {solver,planner} to run (default: both).")
     parser.add_argument("--config-dir", metavar="DIR", type=Path,
                         help="Use scenario_config_*.json files from this directory instead of "
                              "<location>/configurations/. Restricts both generation and which "
                              "instances run afterward to this subset. Mutually exclusive with "
                              "--scenario.")
     parser.add_argument("--output-dir", required=True, metavar="DIR")
-    parser.add_argument("--version", default="2.0.0")
+    parser.add_argument("--solver-version", default="stable",
+                        help="Docker image version for the generator and the solver -- these "
+                             "share the 2.0.0-family version (default: stable). See "
+                             "run_solver.py --help for the full set of choices.")
+    parser.add_argument("--planner-version", default="local",
+                        help="Docker image version for the planner -- robust-rail-planner has "
+                             "its own independent version line, separate from the 2.0.0 family "
+                             "(default: local, i.e. whatever 'docker build -t planner:latest .' "
+                             "produced locally). See run_planner.py --help for the full set of "
+                             "choices.")
+    parser.add_argument("--evaluator-version", default="2.0.0",
+                        help="Docker image version for the evaluator -- kept separate from "
+                             "--solver-version rather than sharing it, even though both default "
+                             "into the same 2.0.0 family: 'stable' is deliberately float-forward "
+                             "(see run_solver.py's own comment on it), and that already caused "
+                             "the solver to silently run against a stale image once. Pinned to "
+                             "the literal 2.0.0 tag by default rather than 'stable' for the same "
+                             "reason -- so a future re-tag doesn't move the evaluator's ground "
+                             "truth out from under a run without it being a deliberate choice. "
+                             "Accepts either a known alias (legacy/stable/stable-assert/edge/"
+                             "local) or, like 2.0.0 here, any other literal tag on "
+                             "ghcr.io/robust-rail-nl/tors -- see run_evaluator.py --help.")
     parser.add_argument("--max-duration", type=int, metavar="SECONDS",
                         help="Wall-clock budget passed through to each solver/planner run. "
                              "Both kill their container directly if exceeded; see "
@@ -301,22 +344,12 @@ def main() -> None:
     for tool in tools:
         if tool not in ("solver", "planner"):
             sys.exit(f"Unknown tool {tool!r}; --tools takes a subset of solver,planner.")
-    # planner is disabled for now: the planner image's plan-to-TORS converter
-    # doesn't handle several action types the current image emits, so every
-    # planner run fails before producing a plan (verified against
-    # KleineBinckhorst scenarios) -- rather than let --tools silently burn
-    # time on runs that can't succeed, refuse it outright. Re-enable by
-    # deleting this check once planning-approach's converter is fixed; nothing
-    # else in this file assumes planner is unavailable.
-    if "planner" in tools:
-        sys.exit("planner is currently disabled (known converter-gap bug in the planner "
-                  "image -- every run fails before producing a plan). Use --tools solver.")
     if args.num_seeds is not None and "solver" not in tools:
         sys.exit("--num-seeds only applies to the solver; include it in --tools.")
 
     if args.config_dir:
         print(f"Generating scenarios for {loc.name} from {args.config_dir}...", flush=True)
-        scenarios = _run_generator_scoped(args.location, loc, args.version, args.dry_run,
+        scenarios = _run_generator_scoped(args.location, loc, args.solver_version, args.dry_run,
                                            args.config_dir)
         print()
         if not scenarios and not args.dry_run:
@@ -324,7 +357,7 @@ def main() -> None:
                       f"(check it and its configs are readable).")
     else:
         print(f"Generating scenarios for {loc.name}...", flush=True)
-        _run_generator(args.location, args.version, args.dry_run)
+        _run_generator(args.location, args.solver_version, args.dry_run)
         print()
 
         if args.scenario:
@@ -341,13 +374,14 @@ def main() -> None:
     print(f"Running {len(scenarios)} instance(s) x {tools} against {loc.name}...\n", flush=True)
 
     all_results = {}
-    # if not args.dry_run:
-    #     out_dir.mkdir(parents=True, exist_ok=True)
-    #     _write_progress(out_dir, scenarios, tools, all_results, args.num_seeds)
-    # for scenario in scenarios:
-    #     _run_instance(args.location, scenario, tools, out_dir, args.version, args.force,
-    #                   args.dry_run, args.max_duration, args.seed, args.num_seeds,
-    #                   all_results, scenarios)
+    if not args.dry_run:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        _write_progress(out_dir, scenarios, tools, all_results, args.num_seeds)
+    for scenario in scenarios:
+        _run_instance(args.location, scenario, tools, out_dir,
+                      args.solver_version, args.planner_version, args.evaluator_version,
+                      args.force, args.dry_run, args.max_duration, args.seed, args.num_seeds,
+                      all_results, scenarios)
 
     print("\n--- Summary ---", flush=True)
     for instance, per_tool in all_results.items():
