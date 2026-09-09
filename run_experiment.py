@@ -272,28 +272,31 @@ def main() -> None:
                              "instances run afterward to this subset. Mutually exclusive with "
                              "--scenario.")
     parser.add_argument("--output-dir", required=True, metavar="DIR")
+    parser.add_argument("--generator-version", default="stable",
+                        help="Docker image version for the generator -- kept separate from "
+                             "--solver-version rather than sharing it (they used to be tied "
+                             "together, both defaulting into the same 2.0.0 family) so the "
+                             "scenario-generation step can be pinned or bumped independently of "
+                             "the solve step. One of legacy/stable/stable-assert/edge/local -- "
+                             "see run_generator.py --help.")
     parser.add_argument("--solver-version", default="stable",
-                        help="Docker image version for the generator and the solver -- these "
-                             "share the 2.0.0-family version (default: stable). See "
-                             "run_solver.py --help for the full set of choices.")
+                        help="Docker image version for the solver. One of legacy/stable/"
+                             "stable-assert/edge/local -- see run_solver.py --help.")
     parser.add_argument("--planner-version", default="local",
                         help="Docker image version for the planner -- robust-rail-planner has "
                              "its own independent version line, separate from the 2.0.0 family "
                              "(default: local, i.e. whatever 'docker build -t planner:latest .' "
                              "produced locally). See run_planner.py --help for the full set of "
                              "choices.")
-    parser.add_argument("--evaluator-version", default="2.0.0",
+    parser.add_argument("--evaluator-version", default="stable",
                         help="Docker image version for the evaluator -- kept separate from "
-                             "--solver-version rather than sharing it, even though both default "
-                             "into the same 2.0.0 family: 'stable' is deliberately float-forward "
-                             "(see run_solver.py's own comment on it), and that already caused "
-                             "the solver to silently run against a stale image once. Pinned to "
-                             "the literal 2.0.0 tag by default rather than 'stable' for the same "
-                             "reason -- so a future re-tag doesn't move the evaluator's ground "
-                             "truth out from under a run without it being a deliberate choice. "
-                             "Accepts either a known alias (legacy/stable/stable-assert/edge/"
-                             "local) or, like 2.0.0 here, any other literal tag on "
-                             "ghcr.io/robust-rail-nl/tors -- see run_evaluator.py --help.")
+                             "--solver-version rather than sharing it: run_evaluator.py's own "
+                             "'stable' is already pinned to the literal ghcr.io/robust-rail-nl/"
+                             "tors:2.0.0 tag (unlike run_solver.py's 'stable', which floats with "
+                             "hip:latest and already caused the solver to silently run against a "
+                             "stale image once), so this stays independently settable without "
+                             "inheriting that floating behavior. See run_evaluator.py --help for "
+                             "the full set of choices.")
     parser.add_argument("--max-duration", type=int, metavar="SECONDS",
                         help="Wall-clock budget passed through to each solver/planner run. "
                              "Both kill their container directly if exceeded; see "
@@ -349,7 +352,7 @@ def main() -> None:
 
     if args.config_dir:
         print(f"Generating scenarios for {loc.name} from {args.config_dir}...", flush=True)
-        scenarios = _run_generator_scoped(args.location, loc, args.solver_version, args.dry_run,
+        scenarios = _run_generator_scoped(args.location, loc, args.generator_version, args.dry_run,
                                            args.config_dir)
         print()
         if not scenarios and not args.dry_run:
@@ -357,7 +360,7 @@ def main() -> None:
                       f"(check it and its configs are readable).")
     else:
         print(f"Generating scenarios for {loc.name}...", flush=True)
-        _run_generator(args.location, args.solver_version, args.dry_run)
+        _run_generator(args.location, args.generator_version, args.dry_run)
         print()
 
         if args.scenario:
